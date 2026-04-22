@@ -56,6 +56,16 @@ const COMPANIES_TABLE = `\`${DATASET}.companies\``;
 const CONTACTS_TABLE = `\`${DATASET}.contacts\``;
 const DEALS_TABLE = `\`${DATASET}.deals\``;
 
+/**
+ * Filter fragment that scopes a query to "currently live UK5K companies".
+ * Use this in the WHERE clause of every company-level query so archived
+ * rows (still present in the Hevo sync but deleted in HubSpot) are excluded.
+ */
+const ACTIVE_UK5K_COMPANY_FILTER = `
+  CAST(c.uk10k AS BOOL) = TRUE
+  AND (c.archived IS NULL OR c.archived = FALSE)
+`;
+
 // How long to cache BigQuery results (1 hour)
 const CACHE_TTL = 3600;
 
@@ -92,8 +102,8 @@ export const getDashboardKPIs = unstable_cache(
               >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
         )                                                           AS spokenToLast12Months,
         COUNTIF(hs_is_target_account = TRUE)                        AS targetAccounts
-      FROM ${COMPANIES_TABLE}
-      WHERE CAST(uk10k AS BOOL) = TRUE
+      FROM ${COMPANIES_TABLE} AS c
+      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
     `;
 
     const rows = await runQuery<{
@@ -154,7 +164,7 @@ export const getBreakdownByProductGroup = unstable_cache(
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
         ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
-      WHERE CAST(c.uk10k AS BOOL) = TRUE
+      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
       GROUP BY label
       ORDER BY totalCompanies DESC
     `;
@@ -218,7 +228,7 @@ export const getBreakdownByIndustry = unstable_cache(
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
         ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
-      WHERE CAST(c.uk10k AS BOOL) = TRUE
+      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
       GROUP BY label
       ORDER BY totalCompanies DESC
       LIMIT 50
@@ -280,8 +290,8 @@ export const getAllCompanies = unstable_cache(
         website,
         linkedin_company_page,
         beauhurst_data_beauhurst_url
-      FROM ${COMPANIES_TABLE}
-      WHERE CAST(uk10k AS BOOL) = TRUE
+      FROM ${COMPANIES_TABLE} AS c
+      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
       ORDER BY name ASC
     `;
 
@@ -320,9 +330,9 @@ export const getCompanyById = unstable_cache(
         website,
         linkedin_company_page,
         beauhurst_data_beauhurst_url
-      FROM ${COMPANIES_TABLE}
-      WHERE CAST(uk10k AS BOOL) = TRUE
-        AND CAST(hs_object_id AS STRING) = '${safeId}'
+      FROM ${COMPANIES_TABLE} AS c
+      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
+        AND CAST(c.hs_object_id AS STRING) = '${safeId}'
       LIMIT 1
     `;
 
