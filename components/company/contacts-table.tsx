@@ -4,11 +4,47 @@
 
 import type { Contact } from "@/types";
 
-interface ContactsTableProps {
-  contacts: Contact[];
+const SENIORITY_LABELS: Record<string, string> = {
+  c_suite: "C-Suite",
+  vp: "VP",
+  director: "Director",
+  manager: "Manager",
+  individual_contributor: "IC",
+  entry_level: "Entry Level",
+  intern: "Intern",
+  other: "Other",
+  unassigned: "—",
+};
+
+function formatSeniority(s: string | null | undefined): string {
+  if (!s) return "—";
+  return SENIORITY_LABELS[s.toLowerCase()] ?? s;
 }
 
-export function ContactsTable({ contacts }: ContactsTableProps) {
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+interface ContactsTableProps {
+  contacts: Contact[];
+  /** When true, data came from the BigQuery fallback rather than live HubSpot */
+  fallback?: boolean;
+}
+
+export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
+  const hasLiveFields = contacts.some(
+    (c) => c.hs_seniority !== undefined || c.notes_last_contacted !== undefined
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-6 py-4">
@@ -18,6 +54,11 @@ export function ContactsTable({ contacts }: ContactsTableProps) {
             {contacts.length}
           </span>
         </h2>
+        {fallback && (
+          <p className="mt-1 text-xs text-slate-400">
+            Showing historic contacts — live data temporarily unavailable.
+          </p>
+        )}
       </div>
 
       {contacts.length === 0 ? (
@@ -33,7 +74,17 @@ export function ContactsTable({ contacts }: ContactsTableProps) {
                 <th className="px-4 py-3 font-medium text-slate-500">
                   Job title
                 </th>
+                {hasLiveFields && (
+                  <th className="px-4 py-3 font-medium text-slate-500">
+                    Seniority
+                  </th>
+                )}
                 <th className="px-6 py-3 font-medium text-slate-500">Email</th>
+                {hasLiveFields && (
+                  <th className="px-4 py-3 font-medium text-slate-500">
+                    Last contacted
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -50,6 +101,11 @@ export function ContactsTable({ contacts }: ContactsTableProps) {
                   <td className="px-4 py-3 text-slate-600">
                     {contact.jobtitle ?? "—"}
                   </td>
+                  {hasLiveFields && (
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatSeniority(contact.hs_seniority)}
+                    </td>
+                  )}
                   <td className="px-6 py-3">
                     {contact.email ? (
                       <a
@@ -62,6 +118,11 @@ export function ContactsTable({ contacts }: ContactsTableProps) {
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
+                  {hasLiveFields && (
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDate(contact.notes_last_contacted)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -7,7 +7,8 @@ import {
   getContactsByCompanyId,
   getDealsByCompanyId,
 } from "@/lib/bigquery";
-import type { Company } from "@/types";
+import { getLiveContactsByCompanyId } from "@/lib/hubspot";
+import type { Company, Contact } from "@/types";
 import { CompanyOverview } from "@/components/company/overview";
 import { ContactsTable } from "@/components/company/contacts-table";
 import { DealsTable } from "@/components/company/deals-table";
@@ -35,12 +36,28 @@ export default async function CompanyDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  // Fetch company, contacts and deals in parallel
-  const [rawCompany, contacts, deals] = await Promise.all([
+  // Fetch company, live contacts (HubSpot), and deals in parallel.
+  // Live contacts fall back to BigQuery if HubSpot is unavailable.
+  const [rawCompany, liveContactsOrNull, deals] = await Promise.all([
     getCompanyById(rawId),
-    getContactsByCompanyId(rawId),
+    getLiveContactsByCompanyId(rawId).catch((err: unknown) => {
+      console.error("[contacts] HubSpot fetch failed — will fall back to BigQuery:", err);
+      return null;
+    }),
     getDealsByCompanyId(rawId),
   ]);
+
+  let contacts: Contact[];
+  let contactsFromFallback = false;
+  if (liveContactsOrNull !== null) {
+    contacts = liveContactsOrNull;
+  } else {
+    contacts = await getContactsByCompanyId(rawId).catch((err: unknown) => {
+      console.error("[contacts] BigQuery fallback also failed:", err);
+      return [] as Contact[];
+    });
+    contactsFromFallback = true;
+  }
 
   if (!rawCompany) {
     notFound();
@@ -153,7 +170,7 @@ export default async function CompanyDetailPage({ params }: PageProps) {
         <CompanyOverview company={company} />
 
         {/* 2. Contacts */}
-        <ContactsTable contacts={contacts} />
+        <ContactsTable contacts={contacts} fallback={contactsFromFallback} />
 
         {/* 3. Deals */}
         <DealsTable deals={deals} />
