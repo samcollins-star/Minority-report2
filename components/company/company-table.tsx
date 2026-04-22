@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * CompanyTable — client component that owns the search bar and filtering logic.
- * The full company list is passed in from the server component as a prop, so
- * there are no network round-trips on each keystroke.
+ * CompanyTable — client component that owns the search bar, filters, and
+ * filtering logic. The full company list is passed in from the server component
+ * as a prop, so there are no network round-trips on each interaction.
  */
 
 import { useState, useMemo } from "react";
@@ -52,59 +52,222 @@ function formatDate(ts: string | null): string {
   }
 }
 
+const SELECT_CLS =
+  "rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm " +
+  "text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none " +
+  "focus:ring-1 focus:ring-indigo-500";
+
 export function CompanyTable({ companies }: CompanyTableProps) {
   const [query, setQuery] = useState("");
+  const [productGroup, setProductGroup] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [customerFilter, setCustomerFilter] = useState("");   // "" | "yes" | "no"
+  const [targetFilter, setTargetFilter] = useState("");       // "" | "yes" | "no"
+  const [contactedFilter, setContactedFilter] = useState(""); // "" | "yes" | "no"
 
-  // Filter companies client-side based on the search query
+  // Distinct sorted values for the dropdown options
+  const productGroups = useMemo(
+    () =>
+      [...new Set(companies.map((c) => c.beauhurst_product).filter(Boolean))]
+        .sort() as string[],
+    [companies]
+  );
+
+  const industries = useMemo(
+    () =>
+      [
+        ...new Set(
+          companies.map((c) => c.new_beauhurst_industries).filter(Boolean)
+        ),
+      ].sort() as string[],
+    [companies]
+  );
+
+  // Apply all filters with AND logic
   const filtered = useMemo(() => {
     const lower = query.trim().toLowerCase();
-    if (!lower) return companies;
-    return companies.filter((c) =>
-      (c.name ?? "").toLowerCase().includes(lower)
-    );
-  }, [companies, query]);
+    const now = Date.now();
+    const oneYear = 365 * 24 * 60 * 60 * 1000;
+
+    return companies.filter((c) => {
+      // Name search
+      if (lower && !(c.name ?? "").toLowerCase().includes(lower)) return false;
+
+      // Product group
+      if (productGroup && (c.beauhurst_product ?? "") !== productGroup)
+        return false;
+
+      // Industry
+      if (industry && (c.new_beauhurst_industries ?? "") !== industry)
+        return false;
+
+      // Customer?
+      if (customerFilter === "yes" && c.planhat_customer_status !== "customer")
+        return false;
+      if (customerFilter === "no" && c.planhat_customer_status === "customer")
+        return false;
+
+      // Target account?
+      if (targetFilter === "yes" && !Boolean(c.hs_is_target_account))
+        return false;
+      if (targetFilter === "no" && Boolean(c.hs_is_target_account))
+        return false;
+
+      // Contacted in last 12 months
+      if (contactedFilter !== "") {
+        const ts = c.hs_last_sales_activity_timestamp;
+        const wasContacted =
+          ts != null && now - new Date(ts).getTime() <= oneYear;
+        if (contactedFilter === "yes" && !wasContacted) return false;
+        if (contactedFilter === "no" && wasContacted) return false;
+      }
+
+      return true;
+    });
+  }, [
+    companies,
+    query,
+    productGroup,
+    industry,
+    customerFilter,
+    targetFilter,
+    contactedFilter,
+  ]);
+
+  const anyFilterActive =
+    query.trim() !== "" ||
+    productGroup !== "" ||
+    industry !== "" ||
+    customerFilter !== "" ||
+    targetFilter !== "" ||
+    contactedFilter !== "";
+
+  function clearFilters() {
+    setQuery("");
+    setProductGroup("");
+    setIndustry("");
+    setCustomerFilter("");
+    setTargetFilter("");
+    setContactedFilter("");
+  }
 
   return (
     <div>
-      {/* Search bar */}
-      <div className="mb-6">
-        <label htmlFor="company-search" className="sr-only">
-          Search companies
-        </label>
-        <div className="relative">
-          {/* Search icon */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <svg
-              className="h-4 w-4 text-slate-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-              />
-            </svg>
+      {/* ── Filters ── */}
+      <div className="mb-6 space-y-3">
+        {/* Row 1: name search */}
+        <div>
+          <label htmlFor="company-search" className="sr-only">
+            Search companies
+          </label>
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <svg
+                className="h-4 w-4 text-slate-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                />
+              </svg>
+            </div>
+            <input
+              id="company-search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by company name…"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:max-w-sm"
+            />
           </div>
-          <input
-            id="company-search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by company name…"
-            className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:max-w-sm"
-          />
         </div>
-        <p className="mt-2 text-xs text-slate-400">
+
+        {/* Row 2: dropdown filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={productGroup}
+            onChange={(e) => setProductGroup(e.target.value)}
+            aria-label="Filter by product group"
+            className={SELECT_CLS}
+          >
+            <option value="">All product groups</option>
+            {productGroups.map((pg) => (
+              <option key={pg} value={pg}>
+                {pg}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            aria-label="Filter by industry"
+            className={SELECT_CLS}
+          >
+            <option value="">All industries</option>
+            {industries.map((ind) => (
+              <option key={ind} value={ind}>
+                {ind}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+            aria-label="Filter by customer status"
+            className={SELECT_CLS}
+          >
+            <option value="">Customer: all</option>
+            <option value="yes">Customer: yes</option>
+            <option value="no">Customer: no</option>
+          </select>
+
+          <select
+            value={targetFilter}
+            onChange={(e) => setTargetFilter(e.target.value)}
+            aria-label="Filter by target account"
+            className={SELECT_CLS}
+          >
+            <option value="">Target account: all</option>
+            <option value="yes">Target account: yes</option>
+            <option value="no">Target account: no</option>
+          </select>
+
+          <select
+            value={contactedFilter}
+            onChange={(e) => setContactedFilter(e.target.value)}
+            aria-label="Filter by recent contact"
+            className={SELECT_CLS}
+          >
+            <option value="">Contacted (12 mo): all</option>
+            <option value="yes">Contacted (12 mo): yes</option>
+            <option value="no">Contacted (12 mo): no</option>
+          </select>
+
+          {anyFilterActive && (
+            <button
+              onClick={clearFilters}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-400">
           {filtered.length.toLocaleString()} of{" "}
           {companies.length.toLocaleString()} companies
         </p>
       </div>
 
-      {/* Table */}
+      {/* ── Table ── */}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead>
