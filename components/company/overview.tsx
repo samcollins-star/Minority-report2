@@ -112,6 +112,15 @@ export function CompanyOverview({ company }: CompanyOverviewProps) {
             {formatDate(company.hs_last_sales_activity_timestamp)}
           </Field>
         </div>
+        <div className="py-3">
+          <Field label="Company owner">
+            {company.owner_name ? (
+              company.owner_name
+            ) : (
+              <span className="text-slate-400">Unassigned</span>
+            )}
+          </Field>
+        </div>
       </dl>
     </section>
   );

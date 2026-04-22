@@ -47,6 +47,12 @@ export interface Company {
 
   /** Beauhurst platform URL */
   beauhurst_data_beauhurst_url: string | null;
+
+  /** HubSpot owner id, or null if unassigned */
+  owner_id: string | null;
+
+  /** Display name for the owner — "First Last", or email fallback, or null if unassigned */
+  owner_name: string | null;
 }
 
 /** A contact row, joined to a company via the company's hs_object_id */

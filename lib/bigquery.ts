@@ -55,6 +55,7 @@ const DATASET =
 const COMPANIES_TABLE = `\`${DATASET}.companies\``;
 const CONTACTS_TABLE = `\`${DATASET}.contacts\``;
 const DEALS_TABLE = `\`${DATASET}.deals\``;
+const OWNERS_TABLE = `\`${DATASET}.owners\``;
 
 /**
  * Filter fragment that scopes a query to "currently live UK5K companies".
@@ -273,29 +274,51 @@ export const getBreakdownByIndustry = unstable_cache(
  * We fetch everything and let the client filter by name — the dataset is
  * bounded enough that this is fine, and it avoids a per-keystroke round-trip.
  */
+type CompanyRow = Omit<Company, "owner_name"> & {
+  owner_name_raw: string | null;
+  owner_email: string | null;
+};
+
+function mapCompanyRow(row: CompanyRow): Company {
+  const { owner_name_raw, owner_email, ...rest } = row;
+  return {
+    ...rest,
+    owner_name: owner_name_raw ?? owner_email ?? null,
+  };
+}
+
 export const getAllCompanies = unstable_cache(
   async (): Promise<Company[]> => {
     const sql = `
       SELECT
-        CAST(hs_object_id AS STRING)          AS hs_object_id,
-        name,
-        uk10k,
-        planhat_customer_status,
-        hs_is_target_account,
-        hs_last_sales_activity_timestamp,
-        beauhurst_product,
-        new_beauhurst_industries,
-        uk_headcount_uk5k,
-        global_headcount_uk5k,
-        website,
-        linkedin_company_page,
-        beauhurst_data_beauhurst_url
+        CAST(c.hs_object_id AS STRING)        AS hs_object_id,
+        c.name,
+        c.uk10k,
+        c.planhat_customer_status,
+        c.hs_is_target_account,
+        c.hs_last_sales_activity_timestamp,
+        c.beauhurst_product,
+        c.new_beauhurst_industries,
+        c.uk_headcount_uk5k,
+        c.global_headcount_uk5k,
+        c.website,
+        c.linkedin_company_page,
+        c.beauhurst_data_beauhurst_url,
+        CAST(o.id AS STRING)                  AS owner_id,
+        NULLIF(
+          TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
+          ''
+        )                                     AS owner_name_raw,
+        o.email                               AS owner_email
       FROM ${COMPANIES_TABLE} AS c
+      LEFT JOIN ${OWNERS_TABLE} o
+        ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
       WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
-      ORDER BY name ASC
+      ORDER BY c.name ASC
     `;
 
-    return runQuery<Company>(sql);
+    const rows = await runQuery<CompanyRow>(sql);
+    return rows.map(mapCompanyRow);
   },
   ["all-companies"],
   { revalidate: CACHE_TTL }
@@ -317,27 +340,36 @@ export const getCompanyById = unstable_cache(
     const safeId = id.replace(/'/g, "");
     const sql = `
       SELECT
-        CAST(hs_object_id AS STRING)          AS hs_object_id,
-        name,
-        uk10k,
-        planhat_customer_status,
-        hs_is_target_account,
-        hs_last_sales_activity_timestamp,
-        beauhurst_product,
-        new_beauhurst_industries,
-        uk_headcount_uk5k,
-        global_headcount_uk5k,
-        website,
-        linkedin_company_page,
-        beauhurst_data_beauhurst_url
+        CAST(c.hs_object_id AS STRING)        AS hs_object_id,
+        c.name,
+        c.uk10k,
+        c.planhat_customer_status,
+        c.hs_is_target_account,
+        c.hs_last_sales_activity_timestamp,
+        c.beauhurst_product,
+        c.new_beauhurst_industries,
+        c.uk_headcount_uk5k,
+        c.global_headcount_uk5k,
+        c.website,
+        c.linkedin_company_page,
+        c.beauhurst_data_beauhurst_url,
+        CAST(o.id AS STRING)                  AS owner_id,
+        NULLIF(
+          TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
+          ''
+        )                                     AS owner_name_raw,
+        o.email                               AS owner_email
       FROM ${COMPANIES_TABLE} AS c
+      LEFT JOIN ${OWNERS_TABLE} o
+        ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
       WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
         AND CAST(c.hs_object_id AS STRING) = '${safeId}'
       LIMIT 1
     `;
 
-    const rows = await runQuery<Company>(sql);
-    return rows[0] ?? null;
+    const rows = await runQuery<CompanyRow>(sql);
+    const row = rows[0];
+    return row ? mapCompanyRow(row) : null;
   },
   ["company-by-id"],
   { revalidate: CACHE_TTL }

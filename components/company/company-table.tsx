@@ -64,6 +64,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
   const [customerFilter, setCustomerFilter] = useState("");   // "" | "yes" | "no"
   const [targetFilter, setTargetFilter] = useState("");       // "" | "yes" | "no"
   const [contactedFilter, setContactedFilter] = useState(""); // "" | "yes" | "no"
+  const [ownerFilter, setOwnerFilter] = useState("");         // "" | "__unassigned__" | <owner name>
 
   // Distinct sorted values for the dropdown options
   const productGroups = useMemo(
@@ -80,6 +81,13 @@ export function CompanyTable({ companies }: CompanyTableProps) {
           companies.map((c) => c.new_beauhurst_industries).filter(Boolean)
         ),
       ].sort() as string[],
+    [companies]
+  );
+
+  const owners = useMemo(
+    () =>
+      [...new Set(companies.map((c) => c.owner_name).filter(Boolean))]
+        .sort() as string[],
     [companies]
   );
 
@@ -122,6 +130,15 @@ export function CompanyTable({ companies }: CompanyTableProps) {
         if (contactedFilter === "no" && wasContacted) return false;
       }
 
+      // Owner
+      if (ownerFilter === "__unassigned__" && c.owner_name != null) return false;
+      if (
+        ownerFilter !== "" &&
+        ownerFilter !== "__unassigned__" &&
+        c.owner_name !== ownerFilter
+      )
+        return false;
+
       return true;
     });
   }, [
@@ -132,6 +149,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
     customerFilter,
     targetFilter,
     contactedFilter,
+    ownerFilter,
   ]);
 
   const anyFilterActive =
@@ -140,7 +158,8 @@ export function CompanyTable({ companies }: CompanyTableProps) {
     industry !== "" ||
     customerFilter !== "" ||
     targetFilter !== "" ||
-    contactedFilter !== "";
+    contactedFilter !== "" ||
+    ownerFilter !== "";
 
   function clearFilters() {
     setQuery("");
@@ -149,6 +168,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
     setCustomerFilter("");
     setTargetFilter("");
     setContactedFilter("");
+    setOwnerFilter("");
   }
 
   return (
@@ -249,6 +269,21 @@ export function CompanyTable({ companies }: CompanyTableProps) {
             <option value="">Contacted (12 mo): all</option>
             <option value="yes">Contacted (12 mo): yes</option>
             <option value="no">Contacted (12 mo): no</option>
+          </select>
+
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            aria-label="Filter by company owner"
+            className={SELECT_CLS}
+          >
+            <option value="">All owners</option>
+            <option value="__unassigned__">Unassigned</option>
+            {owners.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
 
           {anyFilterActive && (
