@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getAllCompanies } from "@/lib/bigquery";
+import type { Company } from "@/types";
 import { CompanyTable } from "@/components/company/company-table";
 
 /**
@@ -14,7 +15,22 @@ export default async function CompaniesPage() {
     redirect("/auth/signin");
   }
 
-  const companies = await getAllCompanies();
+  const raw = await getAllCompanies();
+  const companies: Company[] = raw.map((c) => {
+    // BigQueryTimestamp serialises as { value: "<ISO string>" } rather than a
+    // plain string, so we extract .value before the JSON round-trip.
+    const tsField = c.hs_last_sales_activity_timestamp as unknown;
+    const ts: string | null =
+      tsField == null
+        ? null
+        : typeof tsField === "object"
+        ? ((tsField as { value: string }).value ?? null)
+        : (tsField as string);
+    return {
+      ...(JSON.parse(JSON.stringify(c)) as Company),
+      hs_last_sales_activity_timestamp: ts,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

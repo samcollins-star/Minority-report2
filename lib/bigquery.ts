@@ -93,7 +93,7 @@ export const getDashboardKPIs = unstable_cache(
         )                                                           AS spokenToLast12Months,
         COUNTIF(hs_is_target_account = TRUE)                        AS targetAccounts
       FROM ${COMPANIES_TABLE}
-      WHERE uk10k = TRUE
+      WHERE CAST(uk10k AS BOOL) = TRUE
     `;
 
     const rows = await runQuery<{
@@ -133,11 +133,11 @@ export const getBreakdownByProductGroup = unstable_cache(
       WITH company_deals AS (
         -- Sum deal amounts per company
         SELECT
-          associated_company_id,
+          associated_primary_company_id,
           SUM(CAST(amount AS FLOAT64)) AS total_deal_value
         FROM ${DEALS_TABLE}
         WHERE amount IS NOT NULL
-        GROUP BY associated_company_id
+        GROUP BY associated_primary_company_id
       )
       SELECT
         COALESCE(c.beauhurst_product, 'Unknown')  AS label,
@@ -153,8 +153,8 @@ export const getBreakdownByProductGroup = unstable_cache(
         COALESCE(SUM(cd.total_deal_value), 0)      AS totalDealValue
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
-        ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_company_id AS STRING)
-      WHERE c.uk10k = TRUE
+        ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
+      WHERE CAST(c.uk10k AS BOOL) = TRUE
       GROUP BY label
       ORDER BY totalCompanies DESC
     `;
@@ -198,11 +198,11 @@ export const getBreakdownByIndustry = unstable_cache(
     const sql = `
       WITH company_deals AS (
         SELECT
-          associated_company_id,
+          associated_primary_company_id,
           SUM(CAST(amount AS FLOAT64)) AS total_deal_value
         FROM ${DEALS_TABLE}
         WHERE amount IS NOT NULL
-        GROUP BY associated_company_id
+        GROUP BY associated_primary_company_id
       )
       SELECT
         COALESCE(c.new_beauhurst_industries, 'Unknown') AS label,
@@ -217,8 +217,8 @@ export const getBreakdownByIndustry = unstable_cache(
         COALESCE(SUM(cd.total_deal_value), 0)           AS totalDealValue
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
-        ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_company_id AS STRING)
-      WHERE c.uk10k = TRUE
+        ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
+      WHERE CAST(c.uk10k AS BOOL) = TRUE
       GROUP BY label
       ORDER BY totalCompanies DESC
       LIMIT 50
@@ -276,9 +276,12 @@ export const getAllCompanies = unstable_cache(
         beauhurst_product,
         new_beauhurst_industries,
         uk_headcount_uk5k,
-        global_headcount_uk5k
+        global_headcount_uk5k,
+        website,
+        linkedin_company_page,
+        beauhurst_data_beauhurst_url
       FROM ${COMPANIES_TABLE}
-      WHERE uk10k = TRUE
+      WHERE CAST(uk10k AS BOOL) = TRUE
       ORDER BY name ASC
     `;
 
@@ -313,9 +316,12 @@ export const getCompanyById = unstable_cache(
         beauhurst_product,
         new_beauhurst_industries,
         uk_headcount_uk5k,
-        global_headcount_uk5k
+        global_headcount_uk5k,
+        website,
+        linkedin_company_page,
+        beauhurst_data_beauhurst_url
       FROM ${COMPANIES_TABLE}
-      WHERE uk10k = TRUE
+      WHERE CAST(uk10k AS BOOL) = TRUE
         AND CAST(hs_object_id AS STRING) = '${safeId}'
       LIMIT 1
     `;
@@ -332,9 +338,6 @@ export const getCompanyById = unstable_cache(
  */
 export const getContactsByCompanyId = unstable_cache(
   async (companyId: string): Promise<Contact[]> => {
-    // The contacts table stores the associated company id in a field that
-    // is typically named `associated_company_id` or `hs_company_id`.
-    // We try both via COALESCE so the query is resilient.
     const safeSql = `
       SELECT
         CAST(id AS STRING)  AS id,
@@ -343,7 +346,7 @@ export const getContactsByCompanyId = unstable_cache(
         jobtitle,
         email
       FROM ${CONTACTS_TABLE}
-      WHERE CAST(associated_company_id AS STRING) = '${companyId.replace(/'/g, "")}'
+      WHERE CAST(associatedcompanyid AS STRING) = '${companyId.replace(/'/g, "")}'
       ORDER BY lastname ASC, firstname ASC
     `;
 
@@ -366,7 +369,7 @@ export const getDealsByCompanyId = unstable_cache(
         dealstage,
         CAST(closedate AS STRING)         AS closedate
       FROM ${DEALS_TABLE}
-      WHERE CAST(associated_company_id AS STRING) = '${companyId.replace(/'/g, "")}'
+      WHERE CAST(associated_primary_company_id AS STRING) = '${companyId.replace(/'/g, "")}'
       ORDER BY closedate DESC
     `;
 

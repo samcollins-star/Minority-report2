@@ -38,6 +38,15 @@ export interface Company {
 
   /** Global headcount band from the uk5k dataset */
   global_headcount_uk5k: string | null;
+
+  /** Company website URL (may be bare domain or full https:// URL) */
+  website: string | null;
+
+  /** LinkedIn company page URL */
+  linkedin_company_page: string | null;
+
+  /** Beauhurst platform URL */
+  beauhurst_data_beauhurst_url: string | null;
 }
 
 /** A contact row, joined to a company via the company's hs_object_id */
