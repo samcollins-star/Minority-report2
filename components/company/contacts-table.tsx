@@ -4,6 +4,8 @@
 
 import type { Contact } from "@/types";
 
+const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
+
 function formatFitScore(score: number | null | undefined): string {
   if (score == null) return "—";
   return Number.isInteger(score) ? String(score) : score.toFixed(1);
@@ -75,43 +77,58 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {contacts.map((contact) => (
-                <tr
-                  key={contact.id}
-                  className="transition-colors hover:bg-slate-50"
-                >
-                  <td className="px-6 py-3 font-medium text-slate-900">
-                    {[contact.firstname, contact.lastname]
-                      .filter(Boolean)
-                      .join(" ") || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {contact.jobtitle ?? "—"}
-                  </td>
-                  {hasFitScore && (
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatFitScore(contact.fit_score)}
+              {contacts.map((contact) => {
+                const displayName =
+                  [contact.firstname, contact.lastname]
+                    .filter(Boolean)
+                    .join(" ") || "—";
+                return (
+                  <tr
+                    key={contact.id}
+                    className="transition-colors hover:bg-slate-50"
+                  >
+                    <td className="px-6 py-3 font-medium">
+                      {contact.id ? (
+                        <a
+                          href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/contact/${contact.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-slate-900 hover:text-indigo-700 hover:underline"
+                        >
+                          {displayName}
+                        </a>
+                      ) : (
+                        <span className="text-slate-900">{displayName}</span>
+                      )}
                     </td>
-                  )}
-                  <td className="px-6 py-3">
-                    {contact.email ? (
-                      <a
-                        href={`mailto:${contact.email}`}
-                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
-                      >
-                        {contact.email}
-                      </a>
-                    ) : (
-                      <span className="text-slate-400">—</span>
+                    <td className="px-4 py-3 text-slate-600">
+                      {contact.jobtitle ?? "—"}
+                    </td>
+                    {hasFitScore && (
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatFitScore(contact.fit_score)}
+                      </td>
                     )}
-                  </td>
-                  {hasLastContacted && (
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(contact.notes_last_contacted)}
+                    <td className="px-6 py-3">
+                      {contact.email ? (
+                        <a
+                          href={`mailto:${contact.email}`}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          {contact.email}
+                        </a>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    {hasLastContacted && (
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(contact.notes_last_contacted)}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
