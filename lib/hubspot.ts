@@ -1,22 +1,10 @@
 import { unstable_cache } from "next/cache";
 import type { Contact } from "@/types";
 
-// HubSpot hs_seniority enum → display rank (lower = more senior)
-const SENIORITY_RANK: Record<string, number> = {
-  c_suite: 0,
-  vp: 1,
-  director: 2,
-  manager: 3,
-  individual_contributor: 4,
-  entry_level: 5,
-  intern: 6,
-  other: 7,
-  unassigned: 8,
-};
-
-function seniorityRank(s: string | null | undefined): number {
-  if (!s) return 99;
-  return SENIORITY_RANK[s.toLowerCase()] ?? 8;
+function parseFitScore(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function fetchLiveContactsByCompanyId(companyId: string): Promise<Contact[]> {
@@ -50,7 +38,7 @@ async function fetchLiveContactsByCompanyId(companyId: string): Promise<Contact[
           "lastname",
           "jobtitle",
           "email",
-          "hs_seniority",
+          "fit_score",
           "notes_last_contacted",
           "hs_lastmodifieddate",
         ],
@@ -79,13 +67,19 @@ async function fetchLiveContactsByCompanyId(companyId: string): Promise<Contact[
     lastname: result.properties.lastname ?? null,
     jobtitle: result.properties.jobtitle ?? null,
     email: result.properties.email ?? null,
-    hs_seniority: result.properties.hs_seniority ?? null,
+    fit_score: parseFitScore(result.properties.fit_score),
     notes_last_contacted: result.properties.notes_last_contacted ?? null,
   }));
 
   return contacts.sort((a, b) => {
-    const sr = seniorityRank(a.hs_seniority) - seniorityRank(b.hs_seniority);
-    if (sr !== 0) return sr;
+    const aHas = a.fit_score != null;
+    const bHas = b.fit_score != null;
+    if (aHas && bHas) {
+      const diff = (b.fit_score as number) - (a.fit_score as number);
+      if (diff !== 0) return diff;
+    } else if (aHas !== bHas) {
+      return aHas ? -1 : 1;
+    }
     return (a.lastname ?? "").localeCompare(b.lastname ?? "");
   });
 }

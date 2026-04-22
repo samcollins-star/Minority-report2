@@ -4,21 +4,9 @@
 
 import type { Contact } from "@/types";
 
-const SENIORITY_LABELS: Record<string, string> = {
-  c_suite: "C-Suite",
-  vp: "VP",
-  director: "Director",
-  manager: "Manager",
-  individual_contributor: "IC",
-  entry_level: "Entry Level",
-  intern: "Intern",
-  other: "Other",
-  unassigned: "—",
-};
-
-function formatSeniority(s: string | null | undefined): string {
-  if (!s) return "—";
-  return SENIORITY_LABELS[s.toLowerCase()] ?? s;
+function formatFitScore(score: number | null | undefined): string {
+  if (score == null) return "—";
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -41,9 +29,8 @@ interface ContactsTableProps {
 }
 
 export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
-  const hasLiveFields = contacts.some(
-    (c) => c.hs_seniority !== undefined || c.notes_last_contacted !== undefined
-  );
+  const hasFitScore = contacts.some((c) => c.fit_score != null);
+  const hasLastContacted = contacts.some((c) => c.notes_last_contacted !== undefined);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -74,13 +61,13 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
                 <th className="px-4 py-3 font-medium text-slate-500">
                   Job title
                 </th>
-                {hasLiveFields && (
+                {hasFitScore && (
                   <th className="px-4 py-3 font-medium text-slate-500">
-                    Seniority
+                    Fit Score
                   </th>
                 )}
                 <th className="px-6 py-3 font-medium text-slate-500">Email</th>
-                {hasLiveFields && (
+                {hasLastContacted && (
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Last contacted
                   </th>
@@ -101,9 +88,9 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
                   <td className="px-4 py-3 text-slate-600">
                     {contact.jobtitle ?? "—"}
                   </td>
-                  {hasLiveFields && (
+                  {hasFitScore && (
                     <td className="px-4 py-3 text-slate-600">
-                      {formatSeniority(contact.hs_seniority)}
+                      {formatFitScore(contact.fit_score)}
                     </td>
                   )}
                   <td className="px-6 py-3">
@@ -118,7 +105,7 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
-                  {hasLiveFields && (
+                  {hasLastContacted && (
                     <td className="px-4 py-3 text-slate-600">
                       {formatDate(contact.notes_last_contacted)}
                     </td>
