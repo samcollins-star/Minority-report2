@@ -6,12 +6,14 @@ import {
   getCompanyById,
   getContactsByCompanyId,
   getDealsByCompanyId,
+  getRecentActivityByCompanyId,
 } from "@/lib/bigquery";
 import { getLiveContactsByCompanyId } from "@/lib/hubspot";
-import type { Company, Contact } from "@/types";
+import type { Activity, Company, Contact } from "@/types";
 import { CompanyOverview } from "@/components/company/overview";
 import { ContactsTable } from "@/components/company/contacts-table";
 import { DealsTable } from "@/components/company/deals-table";
+import { ActivityFeed } from "@/components/company/activity-feed";
 
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
 
@@ -36,15 +38,19 @@ export default async function CompanyDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  // Fetch company, live contacts (HubSpot), and deals in parallel.
+  // Fetch company, live contacts (HubSpot), deals, and recent activity in parallel.
   // Live contacts fall back to BigQuery if HubSpot is unavailable.
-  const [rawCompany, liveContactsOrNull, deals] = await Promise.all([
+  const [rawCompany, liveContactsOrNull, deals, activity] = await Promise.all([
     getCompanyById(rawId),
     getLiveContactsByCompanyId(rawId).catch((err: unknown) => {
       console.error("[contacts] HubSpot fetch failed — will fall back to BigQuery:", err);
       return null;
     }),
     getDealsByCompanyId(rawId),
+    getRecentActivityByCompanyId(rawId).catch((err: unknown) => {
+      console.error("[activity] BigQuery fetch failed:", err);
+      return [] as Activity[];
+    }),
   ]);
 
   let contacts: Contact[];
@@ -172,38 +178,15 @@ export default async function CompanyDetailPage({ params }: PageProps) {
         {/* 2. Contacts */}
         <ContactsTable contacts={contacts} fallback={contactsFromFallback} />
 
-        {/* 3. Deals */}
-        <DealsTable deals={deals} />
+        {/* 3. Activity */}
+        <ActivityFeed
+          companyId={rawId}
+          initial={activity}
+          portalId={HUBSPOT_PORTAL_ID}
+        />
 
-        {/* 4. Activities — coming soon placeholder */}
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-6 py-4">
-            <h2 className="text-base font-semibold text-slate-900">
-              Activities
-            </h2>
-          </div>
-          <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-            {/* Placeholder illustration — a simple clock icon */}
-            <svg
-              className="mb-4 h-12 w-12 text-slate-200"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-              />
-            </svg>
-            <p className="text-sm font-medium text-slate-400">Coming soon</p>
-            <p className="mt-1 text-xs text-slate-300">
-              Activity timeline will appear here in a future release.
-            </p>
-          </div>
-        </section>
+        {/* 4. Deals */}
+        <DealsTable deals={deals} />
       </div>
     </div>
   );

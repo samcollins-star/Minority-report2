@@ -13,6 +13,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import { unstable_cache } from "next/cache";
 import type {
+  Activity,
   Company,
   Contact,
   Deal,
@@ -57,6 +58,8 @@ const CONTACTS_TABLE = `\`${DATASET}.contacts\``;
 const DEALS_TABLE = `\`${DATASET}.deals\``;
 const DEALS_PIPELINE_STAGES_TABLE = `\`${DATASET}.deals_pipeline_stages\``;
 const OWNERS_TABLE = `\`${DATASET}.owners\``;
+const ENGAGEMENT_CALLS_TABLE = `\`${DATASET}.engagement_calls_v3\``;
+const ENGAGEMENT_MEETINGS_TABLE = `\`${DATASET}.engagement_meetings_v3\``;
 
 /**
  * Filter fragment that scopes a query to "currently live UK5K companies".
@@ -70,6 +73,9 @@ const ACTIVE_UK5K_COMPANY_FILTER = `
 
 // How long to cache BigQuery results (1 hour)
 const CACHE_TTL = 3600;
+
+// Activity is fresher-sensitive — 5 minutes
+const ACTIVITY_CACHE_TTL = 300;
 
 // ---------------------------------------------------------------------------
 // Helper: run a query and return typed rows
@@ -424,3 +430,188 @@ export const getDealsByCompanyId = unstable_cache(
   ["deals-by-company"],
   { revalidate: CACHE_TTL }
 );
+
+// ---------------------------------------------------------------------------
+// Activity feed — calls and meetings
+// ---------------------------------------------------------------------------
+
+// Decode a small set of HTML entities without pulling in a dependency.
+// These cover the cases we actually see from HubSpot rich-text bodies.
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+// Convert HubSpot HTML bodies to plain text, preserving paragraph/line breaks.
+function stripHtml(html: string | null | undefined): string {
+  if (!html) return "";
+  return decodeEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]*>/g, " ")
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n +/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// First ~160 chars, flattened to a single line, trimmed at word boundary.
+function makePreview(text: string): string | null {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= 160) return flat;
+  const cut = flat.slice(0, 160);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 100 ? cut.slice(0, lastSpace) : cut) + "…";
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  const n = Math.floor(value);
+  if (Number.isNaN(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+interface CallRow {
+  id: string;
+  timestamp: string | null;
+  title: string | null;
+  body_raw: string | null;
+  disposition: string | null;
+  duration_ms: { value: string } | number | null;
+}
+
+export const getRecentCallsByCompanyId = unstable_cache(
+  async (companyId: string, daysBack: number = 60): Promise<Activity[]> => {
+    const safeId = companyId.replace(/'/g, "");
+    const safeDays = clampInt(daysBack, 1, 365);
+    const sql = `
+      SELECT
+        CAST(id AS STRING)                      AS id,
+        CAST(hs_timestamp AS STRING)            AS timestamp,
+        hs_call_title                           AS title,
+        COALESCE(hs_call_body, hs_body_preview) AS body_raw,
+        hs_call_disposition                     AS disposition,
+        CAST(hs_call_duration AS INT64)         AS duration_ms
+      FROM ${ENGAGEMENT_CALLS_TABLE}
+      WHERE CAST(company_record_id AS STRING) = '${safeId}'
+        AND (archived IS NULL OR archived = FALSE)
+        AND hs_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL ${safeDays} DAY)
+      ORDER BY hs_timestamp DESC
+      LIMIT 30
+    `;
+
+    const rows = await runQuery<CallRow>(sql);
+    return rows.map<Activity>((r) => {
+      const body = stripHtml(r.body_raw);
+      const durationMs =
+        r.duration_ms == null
+          ? null
+          : typeof r.duration_ms === "object"
+          ? parseInt(r.duration_ms.value, 10)
+          : Number(r.duration_ms);
+      return {
+        id: r.id,
+        kind: "call",
+        timestamp: r.timestamp ?? "",
+        title: r.title ?? null,
+        body: body || null,
+        preview: body ? makePreview(body) : null,
+        meta: {
+          disposition: r.disposition ?? null,
+          durationMs,
+        },
+      };
+    });
+  },
+  ["recent-calls-by-company"],
+  { revalidate: ACTIVITY_CACHE_TTL }
+);
+
+interface MeetingRow {
+  id: string;
+  timestamp: string | null;
+  title: string | null;
+  body_raw: string | null;
+  outcome: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  location: string | null;
+  internal_notes: string | null;
+}
+
+export const getRecentMeetingsByCompanyId = unstable_cache(
+  async (companyId: string, daysBack: number = 60): Promise<Activity[]> => {
+    const safeId = companyId.replace(/'/g, "");
+    const safeDays = clampInt(daysBack, 1, 365);
+    const sql = `
+      SELECT
+        CAST(id AS STRING)                                             AS id,
+        CAST(COALESCE(hs_meeting_start_time, hs_timestamp) AS STRING)  AS timestamp,
+        hs_meeting_title                                               AS title,
+        COALESCE(hs_meeting_body, hs_body_preview)                     AS body_raw,
+        hs_meeting_outcome                                             AS outcome,
+        CAST(hs_meeting_start_time AS STRING)                          AS start_time,
+        CAST(hs_meeting_end_time AS STRING)                            AS end_time,
+        hs_meeting_location                                            AS location,
+        hs_internal_meeting_notes                                      AS internal_notes
+      FROM ${ENGAGEMENT_MEETINGS_TABLE}
+      WHERE CAST(company_record_id AS STRING) = '${safeId}'
+        AND (archived IS NULL OR archived = FALSE)
+        AND COALESCE(hs_meeting_start_time, hs_timestamp)
+            >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL ${safeDays} DAY)
+      ORDER BY COALESCE(hs_meeting_start_time, hs_timestamp) DESC
+      LIMIT 30
+    `;
+
+    const rows = await runQuery<MeetingRow>(sql);
+    return rows.map<Activity>((r) => {
+      const body = stripHtml(r.body_raw);
+      const notes = stripHtml(r.internal_notes);
+      return {
+        id: r.id,
+        kind: "meeting",
+        timestamp: r.timestamp ?? "",
+        title: r.title ?? null,
+        body: body || null,
+        preview: body ? makePreview(body) : null,
+        meta: {
+          outcome: r.outcome ?? null,
+          startTime: r.start_time ?? null,
+          endTime: r.end_time ?? null,
+          location: r.location ?? null,
+          internalNotes: notes || null,
+        },
+      };
+    });
+  },
+  ["recent-meetings-by-company"],
+  { revalidate: ACTIVITY_CACHE_TTL }
+);
+
+/**
+ * Returns the most recent activity across both engagement types, sorted newest-first.
+ * The inner fetchers are each cached; this helper is a thin composition.
+ */
+export async function getRecentActivityByCompanyId(
+  companyId: string,
+  daysBack: number = 60,
+  limit: number = 20
+): Promise<Activity[]> {
+  const [calls, meetings] = await Promise.all([
+    getRecentCallsByCompanyId(companyId, daysBack),
+    getRecentMeetingsByCompanyId(companyId, daysBack),
+  ]);
+  const merged = [...calls, ...meetings];
+  merged.sort((a, b) =>
+    a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0
+  );
+  return merged.slice(0, clampInt(limit, 1, 100));
+}

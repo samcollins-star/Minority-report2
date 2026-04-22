@@ -68,6 +68,34 @@ export interface Contact {
   notes_last_contacted?: string | null;
 }
 
+/** One engagement on a company's activity feed — a call or meeting. */
+export type ActivityKind = "call" | "meeting";
+
+export interface Activity {
+  id: string;
+  kind: ActivityKind;
+  /** ISO string — call: hs_timestamp; meeting: hs_meeting_start_time ?? hs_timestamp */
+  timestamp: string;
+  /** Title-like display string */
+  title: string | null;
+  /** Full body, HTML-stripped */
+  body: string | null;
+  /** Flattened single-line preview, ≤ 160 chars */
+  preview: string | null;
+  /** Kind-specific metadata. Only the fields relevant to `kind` are populated. */
+  meta: {
+    // calls only
+    disposition?: string | null;
+    durationMs?: number | null;
+    // meetings only
+    outcome?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    location?: string | null;
+    internalNotes?: string | null;
+  };
+}
+
 /** A deal row, joined to a company */
 export interface Deal {
   id: string;
