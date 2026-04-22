@@ -74,6 +74,8 @@ export interface Deal {
   dealname: string | null;
   amount: number | null;
   dealstage: string | null;
+  /** Human-readable deal stage label (e.g. "Closed Won"). Null if dealstage is unset. */
+  dealstage_label: string | null;
   closedate: string | null;
 }
 

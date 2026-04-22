@@ -4,6 +4,8 @@
 
 import type { Deal } from "@/types";
 
+const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
+
 interface DealsTableProps {
   deals: Deal[];
 }
@@ -30,16 +32,14 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-/** Colour-coded chip for deal stage */
-function StageBadge({ stage }: { stage: string | null }) {
-  if (!stage) return <span className="text-slate-400">—</span>;
-
-  // Normalise the stage value for display
-  const label = stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+/** Colour-coded chip for deal stage. Prefers the human-readable label; falls back to the raw id. */
+function StageBadge({ label, raw }: { label: string | null; raw: string | null }) {
+  const display = label ?? raw;
+  if (!display) return <span className="text-slate-400">—</span>;
 
   return (
     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-      {label}
+      {display}
     </span>
   );
 }
@@ -93,14 +93,27 @@ export function DealsTable({ deals }: DealsTableProps) {
                   key={deal.id}
                   className="transition-colors hover:bg-slate-50"
                 >
-                  <td className="px-6 py-3 font-medium text-slate-900">
-                    {deal.dealname ?? "Untitled deal"}
+                  <td className="px-6 py-3 font-medium">
+                    {deal.id ? (
+                      <a
+                        href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${deal.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-slate-900 hover:text-indigo-700 hover:underline"
+                      >
+                        {deal.dealname ?? "Untitled deal"}
+                      </a>
+                    ) : (
+                      <span className="text-slate-900">
+                        {deal.dealname ?? "Untitled deal"}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-medium text-slate-700">
                     {formatCurrency(deal.amount)}
                   </td>
                   <td className="px-4 py-3">
-                    <StageBadge stage={deal.dealstage} />
+                    <StageBadge label={deal.dealstage_label} raw={deal.dealstage} />
                   </td>
                   <td className="px-6 py-3 text-slate-500">
                     {formatDate(deal.closedate)}

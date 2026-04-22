@@ -55,6 +55,7 @@ const DATASET =
 const COMPANIES_TABLE = `\`${DATASET}.companies\``;
 const CONTACTS_TABLE = `\`${DATASET}.contacts\``;
 const DEALS_TABLE = `\`${DATASET}.deals\``;
+const DEALS_PIPELINE_STAGES_TABLE = `\`${DATASET}.deals_pipeline_stages\``;
 const OWNERS_TABLE = `\`${DATASET}.owners\``;
 
 /**
@@ -405,14 +406,17 @@ export const getDealsByCompanyId = unstable_cache(
   async (companyId: string): Promise<Deal[]> => {
     const safeSql = `
       SELECT
-        CAST(id AS STRING)                AS id,
-        dealname,
-        CAST(amount AS FLOAT64)           AS amount,
-        dealstage,
-        CAST(closedate AS STRING)         AS closedate
-      FROM ${DEALS_TABLE}
-      WHERE CAST(associated_primary_company_id AS STRING) = '${companyId.replace(/'/g, "")}'
-      ORDER BY closedate DESC
+        CAST(d.id AS STRING)              AS id,
+        d.dealname,
+        CAST(d.amount AS FLOAT64)         AS amount,
+        d.dealstage,
+        s.label                           AS dealstage_label,
+        CAST(d.closedate AS STRING)       AS closedate
+      FROM ${DEALS_TABLE} AS d
+      LEFT JOIN ${DEALS_PIPELINE_STAGES_TABLE} AS s
+        ON d.dealstage = s.id
+      WHERE CAST(d.associated_primary_company_id AS STRING) = '${companyId.replace(/'/g, "")}'
+      ORDER BY d.closedate DESC
     `;
 
     return runQuery<Deal>(safeSql);
