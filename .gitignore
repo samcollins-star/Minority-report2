@@ -35,3 +35,9 @@ Thumbs.db
 *.swo
 minority-report2-686b2b2781f0.json
 .env.local
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Cowork workspace scratch
+Minority Report/

@@ -56,6 +56,10 @@ export interface Contact {
   lastname: string | null;
   jobtitle: string | null;
   email: string | null;
+  /** HubSpot seniority enum (e.g. "c_suite", "vp", "director") — live fetch only */
+  hs_seniority?: string | null;
+  /** ISO timestamp of the last time this contact was contacted — live fetch only */
+  notes_last_contacted?: string | null;
 }
 
 /** A deal row, joined to a company */
