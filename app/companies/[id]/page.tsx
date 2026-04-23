@@ -180,15 +180,15 @@ export default async function CompanyDetailPage({ params }: PageProps) {
         {/* 2. Contacts */}
         <ContactsTable contacts={contacts} fallback={contactsFromFallback} />
 
-        {/* 3. Activity */}
+        {/* 3. Deals */}
+        <DealsTable deals={deals} />
+
+        {/* 4. Activity */}
         <ActivityFeed
           companyId={rawId}
           initial={activity}
           portalId={HUBSPOT_PORTAL_ID}
         />
-
-        {/* 4. Deals */}
-        <DealsTable deals={deals} />
       </div>
     </div>
   );

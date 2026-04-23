@@ -2,6 +2,9 @@
  * ContactsTable — lists the contacts associated with a company.
  */
 
+"use client";
+
+import { useState } from "react";
 import type { Contact } from "@/types";
 
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
@@ -31,8 +34,12 @@ interface ContactsTableProps {
 }
 
 export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
+  const [expanded, setExpanded] = useState(false);
   const hasFitScore = contacts.some((c) => c.fit_score != null);
   const hasLastContacted = contacts.some((c) => c.notes_last_contacted !== undefined);
+
+  const canTruncate = contacts.length > 5;
+  const visibleContacts = canTruncate && !expanded ? contacts.slice(0, 5) : contacts;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -77,7 +84,7 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {contacts.map((contact) => {
+              {visibleContacts.map((contact) => {
                 const displayName =
                   [contact.firstname, contact.lastname]
                     .filter(Boolean)
@@ -131,6 +138,18 @@ export function ContactsTable({ contacts, fallback }: ContactsTableProps) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {canTruncate && (
+        <div className="flex items-center justify-end border-t border-slate-100 px-6 py-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-800"
+          >
+            {expanded ? "Show less" : `Show more (+${contacts.length - 5})`}
+          </button>
         </div>
       )}
     </section>

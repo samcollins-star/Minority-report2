@@ -25,6 +25,7 @@ export function ActivityFeed({
 }: ActivityFeedProps) {
   const [items, setItems] = useState<Activity[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
   const [showingOlder, setShowingOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -62,6 +63,9 @@ export function ActivityFeed({
   // (there could be exactly 20 and no older), but acceptable for v1.
   const canShowOlder = !showingOlder && items.length >= 20;
 
+  const canTruncate = items.length > 5;
+  const visibleItems = canTruncate && !showAll ? items.slice(0, 5) : items;
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
@@ -82,7 +86,7 @@ export function ActivityFeed({
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <ActivityRow
               key={`${item.kind}:${item.id}`}
               item={item}
@@ -95,10 +99,19 @@ export function ActivityFeed({
         </ul>
       )}
 
-      {(canShowOlder || loadError) && (
+      {(canTruncate || canShowOlder || loadError) && (
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-3">
           {loadError && (
             <span className="text-xs text-rose-600">{loadError}</span>
+          )}
+          {canTruncate && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-800"
+            >
+              {showAll ? "Show less" : `Show more (+${items.length - 5})`}
+            </button>
           )}
           {canShowOlder && (
             <button
