@@ -68,13 +68,13 @@ export interface Contact {
   notes_last_contacted?: string | null;
 }
 
-/** One engagement on a company's activity feed — a call or meeting. */
-export type ActivityKind = "call" | "meeting";
+/** One engagement on a company's activity feed. */
+export type ActivityKind = "call" | "meeting" | "email" | "note" | "task";
 
 export interface Activity {
   id: string;
   kind: ActivityKind;
-  /** ISO string — call: hs_timestamp; meeting: hs_meeting_start_time ?? hs_timestamp */
+  /** ISO string — sourced from hs_timestamp (normalised across kinds by HubSpot). */
   timestamp: string;
   /** Title-like display string */
   title: string | null;
@@ -84,15 +84,23 @@ export interface Activity {
   preview: string | null;
   /** Kind-specific metadata. Only the fields relevant to `kind` are populated. */
   meta: {
-    // calls only
+    // calls
     disposition?: string | null;
     durationMs?: number | null;
-    // meetings only
+    // meetings
     outcome?: string | null;
     startTime?: string | null;
     endTime?: string | null;
     location?: string | null;
     internalNotes?: string | null;
+    // emails
+    direction?: "INCOMING_EMAIL" | "FORWARDED_EMAIL" | "EMAIL" | null;
+    fromEmail?: string | null;
+    toEmails?: string[] | null;
+    // tasks
+    status?: string | null;
+    priority?: string | null;
+    dueDate?: string | null;
   };
 }
 

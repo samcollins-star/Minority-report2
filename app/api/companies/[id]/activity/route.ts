@@ -12,7 +12,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getRecentActivityByCompanyId } from "@/lib/bigquery";
+import { getLiveActivitiesByCompanyId } from "@/lib/hubspot";
 
 function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
   const parsed = raw == null ? NaN : parseInt(raw, 10);
@@ -39,10 +39,10 @@ export async function GET(
   const limit = clampInt(url.searchParams.get("limit"), 20, 1, 100);
 
   try {
-    const activity = await getRecentActivityByCompanyId(rawId, days, limit);
+    const activity = await getLiveActivitiesByCompanyId(rawId, days, limit);
     return NextResponse.json(activity);
   } catch (err) {
-    console.error("[api/activity] BigQuery fetch failed:", err);
+    console.error("[api/activity] HubSpot fetch failed:", err);
     return NextResponse.json(
       { error: "Failed to fetch activity" },
       { status: 500 }

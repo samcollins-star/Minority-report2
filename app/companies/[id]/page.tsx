@@ -6,9 +6,11 @@ import {
   getCompanyById,
   getContactsByCompanyId,
   getDealsByCompanyId,
-  getRecentActivityByCompanyId,
 } from "@/lib/bigquery";
-import { getLiveContactsByCompanyId } from "@/lib/hubspot";
+import {
+  getLiveActivitiesByCompanyId,
+  getLiveContactsByCompanyId,
+} from "@/lib/hubspot";
 import type { Activity, Company, Contact } from "@/types";
 import { CompanyOverview } from "@/components/company/overview";
 import { ContactsTable } from "@/components/company/contacts-table";
@@ -47,8 +49,8 @@ export default async function CompanyDetailPage({ params }: PageProps) {
       return null;
     }),
     getDealsByCompanyId(rawId),
-    getRecentActivityByCompanyId(rawId).catch((err: unknown) => {
-      console.error("[activity] BigQuery fetch failed:", err);
+    getLiveActivitiesByCompanyId(rawId).catch((err: unknown) => {
+      console.error("[activity] HubSpot fetch failed:", err);
       return [] as Activity[];
     }),
   ]);
