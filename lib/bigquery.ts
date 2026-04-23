@@ -15,6 +15,7 @@ import { unstable_cache } from "next/cache";
 import type {
   Activity,
   Company,
+  CompanySummary,
   Contact,
   Deal,
   DashboardKPIs,
@@ -76,6 +77,9 @@ const CACHE_TTL = 3600;
 
 // Activity is fresher-sensitive — 5 minutes
 const ACTIVITY_CACHE_TTL = 300;
+
+// Snapshot card — 5 minutes, so ARR / open-deal changes surface quickly
+const SUMMARY_CACHE_TTL = 300;
 
 // ---------------------------------------------------------------------------
 // Helper: run a query and return typed rows
@@ -615,3 +619,130 @@ export async function getRecentActivityByCompanyId(
   );
   return merged.slice(0, clampInt(limit, 1, 100));
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot — owner, customer status, ARR, open deal in one call
+// ---------------------------------------------------------------------------
+
+interface CompanySummaryRow {
+  owner_id: string | null;
+  owner_name_raw: string | null;
+  owner_email: string | null;
+  customer_status: string | null;
+  current_arr: number | null;
+  open_deal_name: string | null;
+  open_deal_amount: number | null;
+  open_deal_stage: string | null;
+}
+
+export const getCompanySummary = unstable_cache(
+  async (companyId: string): Promise<CompanySummary | null> => {
+    const safeId = companyId.replace(/'/g, "");
+    const sql = `
+      WITH open_deal AS (
+        SELECT
+          d.associated_primary_company_id     AS company_id,
+          d.dealname                          AS dealname,
+          CAST(d.amount AS FLOAT64)           AS amount,
+          s.label                             AS stage_label,
+          d.closedate                         AS closedate
+        FROM ${DEALS_TABLE} d
+        LEFT JOIN ${DEALS_PIPELINE_STAGES_TABLE} s
+          ON d.dealstage = s.id
+        WHERE (s.is_closed IS NULL OR LOWER(s.is_closed) != 'true')
+        QUALIFY ROW_NUMBER() OVER (
+          PARTITION BY d.associated_primary_company_id
+          ORDER BY d.closedate DESC NULLS LAST, d.hs_lastmodifieddate DESC
+        ) = 1
+      ),
+      arr AS (
+        SELECT
+          pc.hubspot_company_id,
+          pci.current_arr
+        FROM \`engine-room-analytics.RetentionReporting.planhat_company\` pc
+        LEFT JOIN \`engine-room-analytics.RetentionReporting.planhat_company_info\` pci
+          ON CAST(pc.external_id AS STRING) = pci.external_id
+      )
+      SELECT
+        CAST(o.id AS STRING)                AS owner_id,
+        NULLIF(
+          TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
+          ''
+        )                                   AS owner_name_raw,
+        o.email                             AS owner_email,
+        c.planhat_customer_status           AS customer_status,
+        arr.current_arr                     AS current_arr,
+        od.dealname                         AS open_deal_name,
+        od.amount                           AS open_deal_amount,
+        od.stage_label                      AS open_deal_stage
+      FROM ${COMPANIES_TABLE} AS c
+      LEFT JOIN ${OWNERS_TABLE} o
+        ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
+      LEFT JOIN arr
+        ON CAST(c.hs_object_id AS STRING) = arr.hubspot_company_id
+      LEFT JOIN open_deal od
+        ON CAST(c.hs_object_id AS STRING) = CAST(od.company_id AS STRING)
+      WHERE CAST(c.hs_object_id AS STRING) = '${safeId}'
+        AND ${ACTIVE_UK5K_COMPANY_FILTER}
+      LIMIT 1
+    `;
+
+    const rows = await runQuery<CompanySummaryRow>(sql);
+    const row = rows[0];
+    if (!row) return null;
+
+    const openDeal =
+      row.open_deal_name != null
+        ? {
+            name: row.open_deal_name,
+            amount:
+              row.open_deal_amount == null ? null : Number(row.open_deal_amount),
+            stage: row.open_deal_stage,
+          }
+        : null;
+
+    return {
+      ownerId: row.owner_id,
+      ownerName: row.owner_name_raw ?? row.owner_email ?? null,
+      isCustomer: row.customer_status === "customer",
+      currentArr: row.current_arr == null ? null : Number(row.current_arr),
+      openDeal,
+    };
+  },
+  ["company-summary"],
+  { revalidate: SUMMARY_CACHE_TTL, tags: ["company-summary"] }
+);
+
+// ---------------------------------------------------------------------------
+// Owner name lookup — resolves a HubSpot owner id to a display name
+// ---------------------------------------------------------------------------
+
+interface OwnerRow {
+  owner_name_raw: string | null;
+  owner_email: string | null;
+}
+
+export const getOwnerNameById = unstable_cache(
+  async (ownerId: string): Promise<string | null> => {
+    if (!ownerId) return null;
+    const safeId = ownerId.replace(/'/g, "");
+    const sql = `
+      SELECT
+        NULLIF(
+          TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
+          ''
+        ) AS owner_name_raw,
+        o.email AS owner_email
+      FROM ${OWNERS_TABLE} o
+      WHERE CAST(o.id AS STRING) = '${safeId}'
+      LIMIT 1
+    `;
+
+    const rows = await runQuery<OwnerRow>(sql);
+    const row = rows[0];
+    if (!row) return null;
+    return row.owner_name_raw ?? row.owner_email ?? null;
+  },
+  ["owner-by-id"],
+  { revalidate: CACHE_TTL, tags: ["owners"] }
+);

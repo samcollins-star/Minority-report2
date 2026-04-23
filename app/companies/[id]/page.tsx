@@ -4,8 +4,10 @@ import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import {
   getCompanyById,
+  getCompanySummary,
   getContactsByCompanyId,
   getDealsByCompanyId,
+  getOwnerNameById,
 } from "@/lib/bigquery";
 import {
   getLiveActivitiesByCompanyId,
@@ -16,6 +18,9 @@ import { CompanyOverview } from "@/components/company/overview";
 import { ContactsTable } from "@/components/company/contacts-table";
 import { DealsTable } from "@/components/company/deals-table";
 import { ActivityFeed } from "@/components/company/activity-feed";
+import { SnapshotCard } from "@/components/company/snapshot-card";
+
+const SNAPSHOT_DAYS = 365;
 
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
 
@@ -42,7 +47,16 @@ export default async function CompanyDetailPage({ params }: PageProps) {
 
   // Fetch company, live contacts (HubSpot), deals, and recent activity in parallel.
   // Live contacts fall back to BigQuery if HubSpot is unavailable.
-  const [rawCompany, liveContactsOrNull, deals, activity] = await Promise.all([
+  // Snapshot needs a 12-month-single-item activity window, separate from the
+  // 60-day feed, so the "not contacted in past year" rule has full visibility.
+  const [
+    rawCompany,
+    liveContactsOrNull,
+    deals,
+    activity,
+    summary,
+    snapshotActivity,
+  ] = await Promise.all([
     getCompanyById(rawId),
     getLiveContactsByCompanyId(rawId).catch((err: unknown) => {
       console.error("[contacts] HubSpot fetch failed — will fall back to BigQuery:", err);
@@ -53,7 +67,25 @@ export default async function CompanyDetailPage({ params }: PageProps) {
       console.error("[activity] HubSpot fetch failed:", err);
       return [] as Activity[];
     }),
+    getCompanySummary(rawId).catch((err: unknown) => {
+      console.error("[summary] BigQuery fetch failed:", err);
+      return null;
+    }),
+    getLiveActivitiesByCompanyId(rawId, SNAPSHOT_DAYS, 1).catch((err: unknown) => {
+      console.error("[snapshot-activity] HubSpot fetch failed:", err);
+      return [] as Activity[];
+    }),
   ]);
+
+  const latestForSnapshot = snapshotActivity[0] ?? null;
+  const latestActorName = latestForSnapshot?.meta.actorOwnerId
+    ? await getOwnerNameById(latestForSnapshot.meta.actorOwnerId).catch(
+        (err: unknown) => {
+          console.error("[snapshot-owner] lookup failed:", err);
+          return null;
+        }
+      )
+    : null;
 
   let contacts: Contact[];
   let contactsFromFallback = false;
@@ -97,17 +129,22 @@ export default async function CompanyDetailPage({ params }: PageProps) {
         <span className="font-medium text-slate-700">{company.name}</span>
       </nav>
 
-      {/* Page heading */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">
-          {company.name ?? "Unknown company"}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          hs_object_id: {company.hs_object_id}
-        </p>
+      {/* Sticky page heading + external links + snapshot card.
+          On md+ this becomes a flex row with the snapshot pinned to the right
+          and sticks to the top of the viewport as you scroll. On mobile the
+          sticky behaviour is dropped and the card stacks below. */}
+      <div className="static z-30 border-b border-slate-200 bg-white/95 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 md:sticky md:top-14">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold text-slate-900">
+              {company.name ?? "Unknown company"}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              hs_object_id: {company.hs_object_id}
+            </p>
 
-        {/* External links */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* External links */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
           {/* HubSpot — always available */}
           <a
             href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/company/${company.hs_object_id}`}
@@ -170,10 +207,31 @@ export default async function CompanyDetailPage({ params }: PageProps) {
             </a>
           )}
         </div>
+          </div>
+
+          {/* Snapshot card — right column on desktop, stacked below on mobile */}
+          {summary && (
+            <div className="md:w-80 md:flex-shrink-0">
+              <SnapshotCard
+                summary={summary}
+                latestActivity={
+                  latestForSnapshot
+                    ? {
+                        kind: latestForSnapshot.kind,
+                        timestamp: latestForSnapshot.timestamp,
+                        actorName: latestActorName,
+                      }
+                    : null
+                }
+                activityDaysBack={SNAPSHOT_DAYS}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Four sections stacked vertically */}
-      <div className="space-y-6">
+      <div className="mt-6 space-y-6">
         {/* 1. Overview */}
         <CompanyOverview company={company} />
 

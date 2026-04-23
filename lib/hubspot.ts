@@ -7,13 +7,32 @@ function parseFitScore(raw: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxAttempts: number = 3
+): Promise<Response> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(url, init);
+    if (response.status !== 429 || attempt === maxAttempts) {
+      return response;
+    }
+    const retryAfter = response.headers.get("retry-after");
+    const parsed = retryAfter != null ? Number(retryAfter) : NaN;
+    const waitSeconds =
+      Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 5) : 1;
+    await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+  }
+  throw new Error("fetchWithRetry: exhausted attempts");
+}
+
 async function fetchLiveContactsByCompanyId(companyId: string): Promise<Contact[]> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
     throw new Error("HUBSPOT_ACCESS_TOKEN is not set");
   }
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     "https://api.hubapi.com/crm/v3/objects/contacts/search",
     {
       method: "POST",
@@ -146,6 +165,7 @@ const PROPERTIES_BY_TYPE: Record<EngagementType, string[]> = {
     "hs_call_disposition",
     "hs_call_duration",
     "hs_timestamp",
+    "hubspot_owner_id",
   ],
   meetings: [
     "hs_meeting_title",
@@ -156,6 +176,7 @@ const PROPERTIES_BY_TYPE: Record<EngagementType, string[]> = {
     "hs_meeting_location",
     "hs_internal_meeting_notes",
     "hs_timestamp",
+    "hubspot_owner_id",
   ],
   emails: [
     "hs_email_subject",
@@ -164,14 +185,16 @@ const PROPERTIES_BY_TYPE: Record<EngagementType, string[]> = {
     "hs_email_from_email",
     "hs_email_to_email",
     "hs_timestamp",
+    "hubspot_owner_id",
   ],
-  notes: ["hs_note_body", "hs_timestamp"],
+  notes: ["hs_note_body", "hs_timestamp", "hubspot_owner_id"],
   tasks: [
     "hs_task_subject",
     "hs_task_body",
     "hs_task_status",
     "hs_task_priority",
     "hs_timestamp",
+    "hubspot_owner_id",
   ],
 };
 
@@ -195,7 +218,7 @@ async function searchEngagements(
   cutoffMs: number,
   perTypeLimit: number
 ): Promise<SearchResult[]> {
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `https://api.hubapi.com/crm/v3/objects/${type}/search`,
     {
       method: "POST",
@@ -242,6 +265,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
   const kind = KIND_BY_TYPE[type];
   const p = r.properties;
   const timestamp = p.hs_timestamp ?? "";
+  const actorOwnerId = p.hubspot_owner_id ?? null;
   // HubSpot returns hs_timestamp as an ISO string; keep as-is.
 
   if (kind === "call") {
@@ -258,6 +282,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
       meta: {
         disposition: p.hs_call_disposition ?? null,
         durationMs: Number.isFinite(durationMs) ? durationMs : null,
+        actorOwnerId,
       },
     };
   }
@@ -278,6 +303,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
         endTime: p.hs_meeting_end_time ?? null,
         location: p.hs_meeting_location ?? null,
         internalNotes: notes || null,
+        actorOwnerId,
       },
     };
   }
@@ -296,6 +322,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
         direction: direction ?? null,
         fromEmail: p.hs_email_from_email ?? null,
         toEmails: parseToEmails(p.hs_email_to_email),
+        actorOwnerId,
       },
     };
   }
@@ -310,7 +337,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
       title: titleFromBody || "Note",
       body: body || null,
       preview: body ? makePreview(body) : null,
-      meta: {},
+      meta: { actorOwnerId },
     };
   }
 
@@ -326,6 +353,7 @@ function mapToActivity(type: EngagementType, r: SearchResult): Activity | null {
       meta: {
         status: p.hs_task_status ?? null,
         priority: p.hs_task_priority ?? null,
+        actorOwnerId,
       },
     };
   }

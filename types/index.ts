@@ -101,7 +101,18 @@ export interface Activity {
     status?: string | null;
     priority?: string | null;
     dueDate?: string | null;
+    // who performed the engagement (HubSpot owner id) — populated by live fetch only
+    actorOwnerId?: string | null;
   };
+}
+
+/** Compact snapshot of a company for the top-of-page card */
+export interface CompanySummary {
+  ownerId: string | null;
+  ownerName: string | null;
+  isCustomer: boolean;
+  currentArr: number | null;
+  openDeal: { name: string; amount: number | null; stage: string | null } | null;
 }
 
 /** A deal row, joined to a company */
