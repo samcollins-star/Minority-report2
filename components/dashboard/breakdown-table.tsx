@@ -25,10 +25,10 @@ function formatCurrency(value: number): string {
 function PenetrationBadge({ pct }: { pct: number }) {
   const colour =
     pct >= 50
-      ? "bg-emerald-100 text-emerald-700"
+      ? "bg-emerald-600 text-white"
       : pct >= 20
-        ? "bg-amber-100 text-amber-700"
-        : "bg-rose-100 text-rose-700";
+        ? "bg-amber-600 text-white"
+        : "bg-slate-500 text-white";
 
   return (
     <span

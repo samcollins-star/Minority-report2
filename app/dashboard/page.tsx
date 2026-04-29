@@ -81,7 +81,7 @@ export default async function DashboardPage() {
         <KpiCard
           label="Target accounts"
           value={kpis.targetAccounts}
-          accentColor="rose"
+          accentColor="violet"
           trend={targetAccountsTrend}
         />
       </section>

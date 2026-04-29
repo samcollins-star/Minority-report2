@@ -171,7 +171,7 @@ export function KpiTrendModal({
                 stroke={accentColor}
                 strokeWidth={2}
                 dot={{ r: 3, fill: accentColor }}
-                activeDot={{ r: 5 }}
+                activeDot={{ r: 5, fill: accentColor }}
               />
             </LineChart>
           </ResponsiveContainer>

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KpiTrendPoint } from "@/lib/bigquery";
 import { KpiTrendModal } from "./kpi-trend-modal";
 
-type AccentColor = "indigo" | "emerald" | "amber" | "rose";
+type AccentColor = "indigo" | "emerald" | "amber" | "violet";
 
 interface KpiCardProps {
   label: string;
@@ -22,17 +22,17 @@ interface KpiCardProps {
 }
 
 const accentStyles: Record<AccentColor, string> = {
-  indigo: "bg-indigo-100 text-indigo-700",
-  emerald: "bg-emerald-100 text-emerald-700",
-  amber: "bg-amber-100 text-amber-700",
-  rose: "bg-rose-100 text-rose-700",
+  indigo: "bg-indigo-600 text-white",
+  emerald: "bg-emerald-600 text-white",
+  amber: "bg-amber-600 text-white",
+  violet: "bg-violet-600 text-white",
 };
 
 const sparklineStroke: Record<AccentColor, string> = {
-  indigo: "#6366f1",
-  emerald: "#10b981",
-  amber: "#f59e0b",
-  rose: "#f43f5e",
+  indigo: "#4f46e5",
+  emerald: "#059669",
+  amber: "#d97706",
+  violet: "#7c3aed",
 };
 
 export function KpiCard({

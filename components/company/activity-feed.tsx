@@ -102,7 +102,7 @@ export function ActivityFeed({
       {(canTruncate || canShowOlder || loadError) && (
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-3">
           {loadError && (
-            <span className="text-xs text-rose-600">{loadError}</span>
+            <span className="text-xs text-amber-700">{loadError}</span>
           )}
           {canTruncate && (
             <button
@@ -310,11 +310,11 @@ function hubspotUrl(
 }
 
 const KIND_BADGE_CLASS: Record<ActivityKind, string> = {
-  call: "bg-emerald-50 text-emerald-600",
-  meeting: "bg-indigo-50 text-indigo-600",
+  call: "bg-indigo-50 text-indigo-600",
+  meeting: "bg-emerald-50 text-emerald-600",
   email: "bg-sky-50 text-sky-600",
-  note: "bg-amber-50 text-amber-600",
-  task: "bg-violet-50 text-violet-600",
+  note: "bg-slate-100 text-slate-600",
+  task: "bg-amber-50 text-amber-600",
 };
 
 function kindBadgeClass(kind: ActivityKind): string {

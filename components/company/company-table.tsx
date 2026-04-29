@@ -19,18 +19,22 @@ function StatusBadge({
   active,
   activeLabel,
   inactiveLabel,
+  activeColor,
 }: {
   active: boolean;
   activeLabel: string;
   inactiveLabel: string;
+  activeColor: "emerald" | "violet";
 }) {
+  const activeClass =
+    activeColor === "emerald"
+      ? "bg-emerald-600 text-white"
+      : "bg-violet-600 text-white";
   return (
     <span
       className={[
         "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-        active
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-slate-100 text-slate-500",
+        active ? activeClass : "bg-slate-100 text-slate-600",
       ].join(" ")}
     >
       {active ? activeLabel : inactiveLabel}
@@ -358,6 +362,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
                       active={company.planhat_customer_status === "customer"}
                       activeLabel="Customer"
                       inactiveLabel="Not customer"
+                      activeColor="emerald"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -365,6 +370,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
                       active={Boolean(company.hs_is_target_account)}
                       activeLabel="Target"
                       inactiveLabel="Not target"
+                      activeColor="violet"
                     />
                   </td>
                   <td className="px-6 py-3 text-slate-500">

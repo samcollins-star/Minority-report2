@@ -13,18 +13,22 @@ function Badge({
   active,
   activeLabel,
   inactiveLabel,
+  activeColor,
 }: {
   active: boolean;
   activeLabel: string;
   inactiveLabel: string;
+  activeColor: "emerald" | "violet";
 }) {
+  const activeClass =
+    activeColor === "emerald"
+      ? "bg-emerald-600 text-white"
+      : "bg-violet-600 text-white";
   return (
     <span
       className={[
         "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-        active
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-slate-100 text-slate-500",
+        active ? activeClass : "bg-slate-100 text-slate-600",
       ].join(" ")}
     >
       {active ? activeLabel : inactiveLabel}
@@ -75,6 +79,7 @@ export function CompanyOverview({ company }: CompanyOverviewProps) {
               active={isCustomer}
               activeLabel="Customer"
               inactiveLabel="Not a customer"
+              activeColor="emerald"
             />
           </Field>
         </div>
@@ -84,6 +89,7 @@ export function CompanyOverview({ company }: CompanyOverviewProps) {
               active={Boolean(company.hs_is_target_account)}
               activeLabel="Yes — target account"
               inactiveLabel="No"
+              activeColor="violet"
             />
           </Field>
         </div>
