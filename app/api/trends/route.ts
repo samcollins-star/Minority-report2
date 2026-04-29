@@ -16,8 +16,21 @@ import { authOptions } from "@/lib/auth";
 import { getKpiTrend, getKpiTrendsBatch } from "@/lib/bigquery";
 
 const ALLOWED_METRICS = new Set([
+  // Headline KPIs (no dimension)
+  "total_companies",
+  "customer_count",
+  "target_account_count",
+  "spoken_to_12m_count",
+  // Per-product breakdowns
   "companies_by_product",
+  "customers_by_product",
+  "target_by_product",
+  "spoken_to_12m_by_product",
+  // Per-industry breakdowns
   "companies_by_industry",
+  "customers_by_industry",
+  "target_by_industry",
+  "spoken_to_12m_by_industry",
 ]);
 
 const MAX_BATCH_DIMENSIONS = 8;

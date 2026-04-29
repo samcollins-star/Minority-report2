@@ -41,6 +41,62 @@ USING (
          COUNT(*)                                        AS count
   FROM active_uk5k
   GROUP BY dimension
+  UNION ALL
+  -- customers_by_product
+  SELECT CURRENT_DATE(),
+         'customers_by_product'                  AS metric_key,
+         COALESCE(beauhurst_product, 'Unknown')  AS dimension,
+         COUNTIF(planhat_customer_status = 'customer') AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  -- customers_by_industry
+  SELECT CURRENT_DATE(),
+         'customers_by_industry'                        AS metric_key,
+         COALESCE(new_beauhurst_industries, 'Unknown')  AS dimension,
+         COUNTIF(planhat_customer_status = 'customer')  AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  -- target_by_product
+  SELECT CURRENT_DATE(),
+         'target_by_product'                     AS metric_key,
+         COALESCE(beauhurst_product, 'Unknown')  AS dimension,
+         COUNTIF(hs_is_target_account = TRUE)    AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  -- target_by_industry
+  SELECT CURRENT_DATE(),
+         'target_by_industry'                           AS metric_key,
+         COALESCE(new_beauhurst_industries, 'Unknown')  AS dimension,
+         COUNTIF(hs_is_target_account = TRUE)           AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  -- spoken_to_12m_by_product
+  SELECT CURRENT_DATE(),
+         'spoken_to_12m_by_product'              AS metric_key,
+         COALESCE(beauhurst_product, 'Unknown')  AS dimension,
+         COUNTIF(
+           hs_last_sales_activity_timestamp IS NOT NULL
+           AND TIMESTAMP(hs_last_sales_activity_timestamp)
+               >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+         )                                        AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  -- spoken_to_12m_by_industry
+  SELECT CURRENT_DATE(),
+         'spoken_to_12m_by_industry'                    AS metric_key,
+         COALESCE(new_beauhurst_industries, 'Unknown')  AS dimension,
+         COUNTIF(
+           hs_last_sales_activity_timestamp IS NOT NULL
+           AND TIMESTAMP(hs_last_sales_activity_timestamp)
+               >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+         )                                              AS count
+  FROM active_uk5k
+  GROUP BY dimension
 ) S
 ON  T.snapshot_date = S.snapshot_date
 AND T.metric_key    = S.metric_key
