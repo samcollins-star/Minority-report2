@@ -5,6 +5,7 @@ import {
   getDashboardKPIs,
   getBreakdownByProductGroup,
   getBreakdownByIndustry,
+  getKpiTrend,
 } from "@/lib/bigquery";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { BreakdownTable } from "@/components/dashboard/breakdown-table";
@@ -20,11 +21,24 @@ export default async function DashboardPage() {
     redirect("/auth/signin");
   }
 
-  // Fetch all three data sets in parallel for faster page load
-  const [kpis, productGroupRows, industryRows] = await Promise.all([
+  // Fetch KPIs, breakdowns, and the four KPI trends in parallel.
+  // Trends are read from minority_report.dashboard_snapshots (weekly job).
+  const [
+    kpis,
+    productGroupRows,
+    industryRows,
+    totalCompaniesTrend,
+    customerTrend,
+    spokenToTrend,
+    targetAccountsTrend,
+  ] = await Promise.all([
     getDashboardKPIs(),
     getBreakdownByProductGroup(),
     getBreakdownByIndustry(),
+    getKpiTrend("total_companies"),
+    getKpiTrend("customer_count"),
+    getKpiTrend("spoken_to_12m_count"),
+    getKpiTrend("target_account_count"),
   ]);
 
   return (
@@ -49,22 +63,26 @@ export default async function DashboardPage() {
           label="Total uk10k companies"
           value={kpis.totalCompanies}
           accentColor="indigo"
+          trend={totalCompaniesTrend}
         />
         <KpiCard
           label="Customers"
           value={kpis.totalCustomers}
           accentColor="emerald"
           subtext={`${kpis.totalCompanies > 0 ? Math.round((kpis.totalCustomers / kpis.totalCompanies) * 100) : 0}% of universe`}
+          trend={customerTrend}
         />
         <KpiCard
           label="Spoken to in last 12 months"
           value={kpis.spokenToLast12Months}
           accentColor="amber"
+          trend={spokenToTrend}
         />
         <KpiCard
           label="Target accounts"
           value={kpis.targetAccounts}
           accentColor="rose"
+          trend={targetAccountsTrend}
         />
       </section>
 

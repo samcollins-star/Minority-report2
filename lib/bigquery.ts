@@ -62,6 +62,9 @@ const OWNERS_TABLE = `\`${DATASET}.owners\``;
 const ENGAGEMENT_CALLS_TABLE = `\`${DATASET}.engagement_calls_v3\``;
 const ENGAGEMENT_MEETINGS_TABLE = `\`${DATASET}.engagement_meetings_v3\``;
 
+const SNAPSHOTS_TABLE =
+  "`engine-room-analytics.minority_report.dashboard_snapshots`";
+
 /**
  * Filter fragment that scopes a query to "currently live UK5K companies".
  * Use this in the WHERE clause of every company-level query so archived
@@ -711,6 +714,50 @@ export const getCompanySummary = unstable_cache(
   },
   ["company-summary"],
   { revalidate: SUMMARY_CACHE_TTL, tags: ["company-summary"] }
+);
+
+// ---------------------------------------------------------------------------
+// KPI trend — weekly snapshots from minority_report.dashboard_snapshots
+// ---------------------------------------------------------------------------
+
+export interface KpiTrendPoint {
+  /** ISO yyyy-mm-dd */
+  snapshotDate: string;
+  count: number;
+}
+
+const TREND_CACHE_TTL = 3600;
+
+export const getKpiTrend = unstable_cache(
+  async (
+    metricKey: string,
+    weeks: number = 12
+  ): Promise<KpiTrendPoint[]> => {
+    const safeWeeks = clampInt(weeks, 1, 104);
+    const sql = `
+      SELECT
+        CAST(snapshot_date AS STRING) AS snapshotDate,
+        count                         AS count
+      FROM ${SNAPSHOTS_TABLE}
+      WHERE metric_key = ?
+        AND dimension IS NULL
+        AND snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+      ORDER BY snapshot_date ASC
+    `;
+
+    const rows = await runQuery<{
+      snapshotDate: string;
+      count: { value: string } | number;
+    }>(sql, [metricKey]);
+
+    return rows.map((r) => ({
+      snapshotDate: r.snapshotDate,
+      count:
+        typeof r.count === "object" ? parseInt(r.count.value, 10) : Number(r.count),
+    }));
+  },
+  ["kpi-trend"],
+  { revalidate: TREND_CACHE_TTL, tags: ["kpi-trends"] }
 );
 
 // ---------------------------------------------------------------------------
