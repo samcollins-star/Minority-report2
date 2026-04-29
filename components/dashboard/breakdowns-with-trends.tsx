@@ -19,13 +19,16 @@ interface OpenTrend {
   accentColor: string;
 }
 
-const PRODUCT_ACCENTS: Record<string, string> = {
-  BeauhurstSales: "#4f46e5",
-  BeauhurstAdvise: "#059669",
-  BeauhurstImpact: "#d97706",
-  BeauhurstInvest: "#7c3aed",
-  Unknown: "#64748b",
+const PRODUCT_BRAND_COLOR: Record<string, { tw: string; hex: string }> = {
+  BeauhurstSales: { tw: "bg-red-600", hex: "#dc2626" },
+  BeauhurstAdvise: { tw: "bg-fuchsia-600", hex: "#c026d3" },
+  BeauhurstImpact: { tw: "bg-blue-600", hex: "#2563eb" },
+  BeauhurstInvest: { tw: "bg-green-500", hex: "#22c55e" },
 };
+
+function productAccent(label: string) {
+  return PRODUCT_BRAND_COLOR[label] ?? { tw: "bg-slate-400", hex: "#94a3b8" };
+}
 
 const INDUSTRY_DEFAULT_ACCENT = "#4f46e5";
 
@@ -82,7 +85,7 @@ export function BreakdownsWithTrends({
       dimension: row.label,
       title: row.label,
       currentValue: row.totalCompanies,
-      accentColor: PRODUCT_ACCENTS[row.label] ?? "#64748b",
+      accentColor: productAccent(row.label).hex,
     });
   };
 
@@ -102,6 +105,7 @@ export function BreakdownsWithTrends({
         title="By Product Group"
         rows={productGroupRows}
         onRowClick={handleProductClick}
+        swatchFor={(row) => productAccent(row.label).tw}
       />
       <BreakdownTable
         title="By Industry"

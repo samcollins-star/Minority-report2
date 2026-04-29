@@ -10,6 +10,11 @@ interface BreakdownTableProps {
   rows: BreakdownRow[];
   /** When provided, rows become clickable and call this with the row's data. */
   onRowClick?: (row: BreakdownRow) => void;
+  /**
+   * Optional per-row swatch. Returns a Tailwind background class (e.g. `bg-red-600`)
+   * to render an 8px circular dot before the row label, or null to omit.
+   */
+  swatchFor?: (row: BreakdownRow) => string | null;
 }
 
 /** Format a number as compact currency: £1.2m, £34k, £999 etc. */
@@ -44,7 +49,12 @@ function PenetrationBadge({ pct }: { pct: number }) {
   );
 }
 
-export function BreakdownTable({ title, rows, onRowClick }: BreakdownTableProps) {
+export function BreakdownTable({
+  title,
+  rows,
+  onRowClick,
+  swatchFor,
+}: BreakdownTableProps) {
   const interactive = typeof onRowClick === "function";
 
   if (rows.length === 0) {
@@ -117,7 +127,25 @@ export function BreakdownTable({ title, rows, onRowClick }: BreakdownTableProps)
                 ].join(" ")}
               >
                 <td className="px-6 py-3 font-medium text-slate-900">
-                  {row.label}
+                  {swatchFor ? (
+                    <span className="inline-flex items-center gap-2">
+                      {(() => {
+                        const swatch = swatchFor(row);
+                        return swatch ? (
+                          <span
+                            aria-hidden="true"
+                            className={[
+                              "inline-block h-2 w-2 rounded-full",
+                              swatch,
+                            ].join(" ")}
+                          />
+                        ) : null;
+                      })()}
+                      {row.label}
+                    </span>
+                  ) : (
+                    row.label
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right text-slate-600">
                   {row.totalCompanies.toLocaleString()}
