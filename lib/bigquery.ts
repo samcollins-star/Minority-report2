@@ -766,6 +766,80 @@ export const getKpiTrend = unstable_cache(
   { revalidate: TREND_CACHE_TTL, tags: ["kpi-trends"] }
 );
 
+/**
+ * Batch variant of getKpiTrend — fetches several dimensions in one query.
+ * Returns a Map keyed on dimension; dimensions with no rows in the window
+ * still appear in the Map with an empty array, so callers can render or skip.
+ *
+ * The cache key uses the *sorted* dimension list, so the order the caller
+ * passes dimensions in doesn't bust the cache.
+ */
+export async function getKpiTrendsBatch(
+  metricKey: string,
+  dimensions: string[],
+  weeks: number = 12
+): Promise<Map<string, KpiTrendPoint[]>> {
+  if (dimensions.length === 0) return new Map();
+  const sorted = [...dimensions].sort();
+  const points = await fetchKpiTrendsBatchSorted(metricKey, sorted, weeks);
+  const map = new Map<string, KpiTrendPoint[]>();
+  for (const d of dimensions) {
+    map.set(d, points[d] ?? []);
+  }
+  return map;
+}
+
+/**
+ * Internal cached fetch — keyed on (metricKey, sorted dimensions, weeks).
+ * Returns a plain object so it serialises cleanly through unstable_cache.
+ */
+const fetchKpiTrendsBatchSorted = unstable_cache(
+  async (
+    metricKey: string,
+    sortedDimensions: string[],
+    weeks: number
+  ): Promise<Record<string, KpiTrendPoint[]>> => {
+    const safeWeeks = clampInt(weeks, 1, 104);
+    const sql = `
+      SELECT
+        dimension                     AS dimension,
+        CAST(snapshot_date AS STRING) AS snapshotDate,
+        count                         AS count
+      FROM ${SNAPSHOTS_TABLE}
+      WHERE metric_key = @metric
+        AND dimension IN UNNEST(@dimensions)
+        AND snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+      ORDER BY dimension ASC, snapshot_date ASC
+    `;
+
+    const [rows] = await bigquery.query({
+      query: sql,
+      params: { metric: metricKey, dimensions: sortedDimensions },
+    });
+
+    const out: Record<string, KpiTrendPoint[]> = {};
+    for (const d of sortedDimensions) out[d] = [];
+    for (const r of rows as Array<{
+      dimension: string;
+      snapshotDate: string;
+      count: { value: string } | number;
+    }>) {
+      const list = out[r.dimension];
+      if (!list) continue;
+      list.push({
+        snapshotDate: r.snapshotDate,
+        count:
+          typeof r.count === "object"
+            ? parseInt(r.count.value, 10)
+            : Number(r.count),
+      });
+    }
+    return out;
+  },
+  ["kpi-trends-batch"],
+  { revalidate: TREND_CACHE_TTL, tags: ["kpi-trends"] }
+);
+
 // ---------------------------------------------------------------------------
 // Owner name lookup — resolves a HubSpot owner id to a display name
 // ---------------------------------------------------------------------------

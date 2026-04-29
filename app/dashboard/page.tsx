@@ -6,7 +6,9 @@ import {
   getBreakdownByProductGroup,
   getBreakdownByIndustry,
   getKpiTrend,
+  getKpiTrendsBatch,
 } from "@/lib/bigquery";
+import type { KpiTrendPoint } from "@/lib/bigquery";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { BreakdownsWithTrends } from "@/components/dashboard/breakdowns-with-trends";
 
@@ -23,6 +25,12 @@ export default async function DashboardPage() {
 
   // Fetch KPIs, breakdowns, and the four KPI trends in parallel.
   // Trends are read from minority_report.dashboard_snapshots (weekly job).
+  const PRODUCTS = [
+    "BeauhurstSales",
+    "BeauhurstAdvise",
+    "BeauhurstImpact",
+    "BeauhurstInvest",
+  ];
   const [
     kpis,
     productGroupRows,
@@ -31,6 +39,7 @@ export default async function DashboardPage() {
     customerTrend,
     spokenToTrend,
     targetAccountsTrend,
+    productTrendsMap,
   ] = await Promise.all([
     getDashboardKPIs(),
     getBreakdownByProductGroup(),
@@ -39,7 +48,15 @@ export default async function DashboardPage() {
     getKpiTrend("customer_count"),
     getKpiTrend("spoken_to_12m_count"),
     getKpiTrend("target_account_count"),
+    getKpiTrendsBatch("companies_by_product", PRODUCTS),
   ]);
+
+  // unstable_cache returns plain objects across the server/client boundary;
+  // convert the Map to a plain Record before passing to a client component.
+  const productTrends: Record<string, KpiTrendPoint[]> = {};
+  for (const p of PRODUCTS) {
+    productTrends[p] = productTrendsMap.get(p) ?? [];
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -94,6 +111,7 @@ export default async function DashboardPage() {
         <BreakdownsWithTrends
           productGroupRows={productGroupRows}
           industryRows={industryRows}
+          productTrends={productTrends}
         />
       </section>
     </div>
