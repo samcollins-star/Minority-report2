@@ -1,8 +1,12 @@
+"use client";
+
 /**
  * KpiCard — displays a single top-level metric on the dashboard.
  */
 
+import { useEffect, useRef, useState } from "react";
 import type { KpiTrendPoint } from "@/lib/bigquery";
+import { KpiTrendModal } from "./kpi-trend-modal";
 
 type AccentColor = "indigo" | "emerald" | "amber" | "rose";
 
@@ -38,36 +42,85 @@ export function KpiCard({
   accentColor = "indigo",
   trend,
 }: KpiCardProps) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      {/* Accent dot */}
-      <div
-        className={[
-          "mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold",
-          accentStyles[accentColor],
-        ].join(" ")}
-        aria-hidden="true"
-      >
-        {/* Just a coloured square — the label carries the meaning */}
-        &nbsp;
-      </div>
+  const interactive = !!trend && trend.length >= 2;
+  const [modalOpen, setModalOpen] = useState(false);
+  const cardRef = useRef<HTMLButtonElement | HTMLDivElement | null>(null);
+  const wasOpen = useRef(false);
 
-      {/* Number */}
-      <p className="text-3xl font-bold tracking-tight text-slate-900">
-        {value.toLocaleString()}
-      </p>
+  // Restore focus to the card when the modal closes.
+  useEffect(() => {
+    if (wasOpen.current && !modalOpen) {
+      cardRef.current?.focus();
+    }
+    wasOpen.current = modalOpen;
+  }, [modalOpen]);
 
-      {/* Label */}
-      <p className="mt-1 text-sm font-medium text-slate-500">{label}</p>
-
-      {/* Optional subtext */}
-      {subtext && <p className="mt-2 text-xs text-slate-400">{subtext}</p>}
-
-      {/* Optional sparkline — needs ≥ 2 points to draw a line */}
-      {trend && trend.length >= 2 && (
-        <Sparkline points={trend} stroke={sparklineStroke[accentColor]} />
-      )}
+  const accentDot = (
+    <div
+      className={[
+        "mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold",
+        accentStyles[accentColor],
+      ].join(" ")}
+      aria-hidden="true"
+    >
+      &nbsp;
     </div>
+  );
+
+  const number = (
+    <p className="text-3xl font-bold tracking-tight text-slate-900">
+      {value.toLocaleString()}
+    </p>
+  );
+
+  const labelEl = (
+    <p className="mt-1 text-sm font-medium text-slate-500">{label}</p>
+  );
+
+  const subtextEl = subtext && (
+    <p className="mt-2 text-xs text-slate-400">{subtext}</p>
+  );
+
+  const sparkline = trend && trend.length >= 2 && (
+    <Sparkline points={trend} stroke={sparklineStroke[accentColor]} />
+  );
+
+  if (!interactive) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        {accentDot}
+        {number}
+        {labelEl}
+        {subtextEl}
+        {sparkline}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        ref={cardRef as React.RefObject<HTMLButtonElement>}
+        type="button"
+        onClick={() => setModalOpen(true)}
+        aria-haspopup="dialog"
+        className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm text-left w-full cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+      >
+        {accentDot}
+        {number}
+        {labelEl}
+        {subtextEl}
+        {sparkline}
+      </button>
+      <KpiTrendModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={label}
+        currentValue={value}
+        data={trend!}
+        accentColor={sparklineStroke[accentColor]}
+      />
+    </>
   );
 }
 
