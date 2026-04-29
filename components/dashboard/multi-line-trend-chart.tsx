@@ -23,6 +23,13 @@ interface MultiLineTrendChartProps {
   series: MultiLineSeries[];
   height?: number;
   showLegend?: boolean;
+  /**
+   * How to format Y-axis ticks and tooltip values.
+   * - `count` (default): integer with thousand separators.
+   * - `percent`: one-decimal percent for tooltips, integer percent on ticks.
+   * The chart stays unaware of metric semantics; it just formats numbers.
+   */
+  formatter?: "count" | "percent";
 }
 
 const tickFmt = new Intl.DateTimeFormat("en-GB", {
@@ -77,6 +84,7 @@ export function MultiLineTrendChart({
   series,
   height = 280,
   showLegend = true,
+  formatter = "count",
 }: MultiLineTrendChartProps) {
   // A series with fewer than 2 points renders as either a single dot or
   // nothing at all — drop it so a partially-seeded dashboard doesn't show
@@ -109,11 +117,20 @@ export function MultiLineTrendChart({
           <YAxis
             tick={{ fill: "#64748b", fontSize: 12 }}
             domain={["auto", "auto"]}
+            tickFormatter={(v: number) =>
+              formatter === "percent"
+                ? `${v.toFixed(0)}%`
+                : v.toLocaleString()
+            }
           />
           <Tooltip
             labelFormatter={(label) => formatTooltipLabel(String(label))}
             formatter={(value, name) => [
-              value == null ? "—" : Number(value).toLocaleString(),
+              value == null
+                ? "—"
+                : formatter === "percent"
+                  ? `${Number(value).toFixed(1)}%`
+                  : Number(value).toLocaleString(),
               String(name),
             ]}
             contentStyle={{

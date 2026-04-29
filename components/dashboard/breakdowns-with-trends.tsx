@@ -18,11 +18,16 @@ interface BreakdownsWithTrendsProps {
   productGroupRows: BreakdownRow[];
   industryRows: BreakdownRow[];
   /**
-   * Pre-fetched product trends keyed by product label. Empty array if no
-   * snapshot rows for that product (the chart will silently skip series with
-   * fewer than 2 points).
+   * Pre-fetched product trends, one Record per metric, each keyed on product
+   * label. Empty arrays for products with no snapshot rows. Penetration is
+   * derived client-side from companies + customers, so isn't a separate fetch.
    */
-  productTrends: Record<string, KpiTrendPoint[]>;
+  productTrends: {
+    companies: Record<string, KpiTrendPoint[]>;
+    customers: Record<string, KpiTrendPoint[]>;
+    target: Record<string, KpiTrendPoint[]>;
+    spokenTo: Record<string, KpiTrendPoint[]>;
+  };
 }
 
 interface OpenTrend {
@@ -83,6 +88,47 @@ const BREAKDOWN_METRIC_TABS: MetricOption[] = [
   { key: "spoken_to_12m", label: "Spoken to (12m)", formatter: "count" },
 ];
 
+/** Tab definitions for the always-on Product trends chart — same five metrics. */
+const PRODUCT_TREND_TABS: MetricOption[] = BREAKDOWN_METRIC_TABS;
+
+/** Subtitle copy keyed on metric — `<X>` is filled in with the data span. */
+const PRODUCT_SUBTITLE: Record<MetricKey, (weeks: string) => string> = {
+  companies: (w) => `Company counts ${w}`,
+  customers: (w) => `Customer counts ${w}`,
+  penetration: (w) => `Customer penetration (% of companies) ${w}`,
+  target: (w) => `Target accounts ${w}`,
+  spoken_to_12m: (w) => `Companies spoken to in last 12 months, ${w}`,
+};
+
+/**
+ * Derive a per-product penetration series by zipping companies + customers
+ * by snapshot_date. Drops rows where companies is 0/missing on either side.
+ */
+function derivePenetrationByProduct(
+  companies: Record<string, KpiTrendPoint[]>,
+  customers: Record<string, KpiTrendPoint[]>
+): Record<string, KpiTrendPoint[]> {
+  const out: Record<string, KpiTrendPoint[]> = {};
+  for (const product of PRODUCT_ORDER) {
+    const cArr = companies[product] ?? [];
+    const custByDate = new Map(
+      (customers[product] ?? []).map((p) => [p.snapshotDate, p.count])
+    );
+    const points: KpiTrendPoint[] = [];
+    for (const c of cArr) {
+      if (!c.count) continue;
+      const cust = custByDate.get(c.snapshotDate);
+      if (cust == null) continue;
+      points.push({
+        snapshotDate: c.snapshotDate,
+        count: (cust / c.count) * 100,
+      });
+    }
+    out[product] = points;
+  }
+  return out;
+}
+
 function rowToCurrentValueByMetric(
   row: BreakdownRow
 ): Partial<Record<MetricKey, number>> {
@@ -128,13 +174,35 @@ export function BreakdownsWithTrends({
   };
 
   // ---- product trends chart series -------------------------------------
+  const [productMetric, setProductMetric] = useState<MetricKey>("companies");
+
+  const productMetricOption = useMemo<MetricOption>(
+    () =>
+      PRODUCT_TREND_TABS.find((t) => t.key === productMetric) ??
+      PRODUCT_TREND_TABS[0],
+    [productMetric]
+  );
+
   const productSeries = useMemo<MultiLineSeries[]>(() => {
+    const data: Record<string, KpiTrendPoint[]> =
+      productMetric === "companies"
+        ? productTrends.companies
+        : productMetric === "customers"
+          ? productTrends.customers
+          : productMetric === "target"
+            ? productTrends.target
+            : productMetric === "spoken_to_12m"
+              ? productTrends.spokenTo
+              : derivePenetrationByProduct(
+                  productTrends.companies,
+                  productTrends.customers
+                );
     return PRODUCT_ORDER.map((label) => ({
       label,
       hex: productAccent(label).hex,
-      data: productTrends[label] ?? [],
+      data: data[label] ?? [],
     }));
-  }, [productTrends]);
+  }, [productMetric, productTrends]);
 
   // ---- industry compare selection --------------------------------------
   // Selection is preserved by *insertion order* so palette assignment stays
@@ -283,12 +351,45 @@ export function BreakdownsWithTrends({
             Product trends
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            {productSpanWeeks
-              ? `Company counts over the last ${productSpanWeeks} week${productSpanWeeks === 1 ? "" : "s"}`
-              : "Company counts over time"}
+            {PRODUCT_SUBTITLE[productMetric](
+              productSpanWeeks
+                ? `over the last ${productSpanWeeks} week${productSpanWeeks === 1 ? "" : "s"}`
+                : "over time"
+            )}
           </p>
         </div>
-        <MultiLineTrendChart series={productSeries} />
+
+        <div
+          role="tablist"
+          aria-label="Product trends metric"
+          className="mb-4 flex flex-wrap gap-1 border-b border-slate-200"
+        >
+          {PRODUCT_TREND_TABS.map((t) => {
+            const selected = t.key === productMetric;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setProductMetric(t.key)}
+                className={[
+                  "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                  selected
+                    ? "border-slate-900 text-slate-900"
+                    : "border-transparent text-slate-500 hover:text-slate-700",
+                ].join(" ")}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <MultiLineTrendChart
+          series={productSeries}
+          formatter={productMetricOption.formatter}
+        />
       </div>
 
       <BreakdownTable

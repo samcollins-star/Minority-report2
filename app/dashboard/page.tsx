@@ -39,7 +39,10 @@ export default async function DashboardPage() {
     customerTrend,
     spokenToTrend,
     targetAccountsTrend,
-    productTrendsMap,
+    productCompanies,
+    productCustomers,
+    productTarget,
+    productSpokenTo,
   ] = await Promise.all([
     getDashboardKPIs(),
     getBreakdownByProductGroup(),
@@ -49,14 +52,26 @@ export default async function DashboardPage() {
     getKpiTrend("spoken_to_12m_count"),
     getKpiTrend("target_account_count"),
     getKpiTrendsBatch("companies_by_product", PRODUCTS),
+    getKpiTrendsBatch("customers_by_product", PRODUCTS),
+    getKpiTrendsBatch("target_by_product", PRODUCTS),
+    getKpiTrendsBatch("spoken_to_12m_by_product", PRODUCTS),
   ]);
 
   // unstable_cache returns plain objects across the server/client boundary;
-  // convert the Map to a plain Record before passing to a client component.
-  const productTrends: Record<string, KpiTrendPoint[]> = {};
-  for (const p of PRODUCTS) {
-    productTrends[p] = productTrendsMap.get(p) ?? [];
-  }
+  // convert each Map to a plain Record before passing to a client component.
+  const toRecord = (
+    map: Map<string, KpiTrendPoint[]>
+  ): Record<string, KpiTrendPoint[]> => {
+    const out: Record<string, KpiTrendPoint[]> = {};
+    for (const p of PRODUCTS) out[p] = map.get(p) ?? [];
+    return out;
+  };
+  const productTrends = {
+    companies: toRecord(productCompanies),
+    customers: toRecord(productCustomers),
+    target: toRecord(productTarget),
+    spokenTo: toRecord(productSpokenTo),
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
