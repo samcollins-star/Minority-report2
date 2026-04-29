@@ -731,24 +731,30 @@ const TREND_CACHE_TTL = 3600;
 export const getKpiTrend = unstable_cache(
   async (
     metricKey: string,
+    dimension?: string | null,
     weeks: number = 12
   ): Promise<KpiTrendPoint[]> => {
     const safeWeeks = clampInt(weeks, 1, 104);
+    const hasDimension = typeof dimension === "string";
+    const dimensionClause = hasDimension
+      ? "dimension = ?"
+      : "dimension IS NULL";
     const sql = `
       SELECT
         CAST(snapshot_date AS STRING) AS snapshotDate,
         count                         AS count
       FROM ${SNAPSHOTS_TABLE}
       WHERE metric_key = ?
-        AND dimension IS NULL
+        AND ${dimensionClause}
         AND snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
       ORDER BY snapshot_date ASC
     `;
 
+    const params = hasDimension ? [metricKey, dimension] : [metricKey];
     const rows = await runQuery<{
       snapshotDate: string;
       count: { value: string } | number;
-    }>(sql, [metricKey]);
+    }>(sql, params);
 
     return rows.map((r) => ({
       snapshotDate: r.snapshotDate,

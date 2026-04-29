@@ -8,6 +8,8 @@ import type { BreakdownRow } from "@/types";
 interface BreakdownTableProps {
   title: string;
   rows: BreakdownRow[];
+  /** When provided, rows become clickable and call this with the row's data. */
+  onRowClick?: (row: BreakdownRow) => void;
 }
 
 /** Format a number as compact currency: £1.2m, £34k, £999 etc. */
@@ -42,7 +44,9 @@ function PenetrationBadge({ pct }: { pct: number }) {
   );
 }
 
-export function BreakdownTable({ title, rows }: BreakdownTableProps) {
+export function BreakdownTable({ title, rows, onRowClick }: BreakdownTableProps) {
+  const interactive = typeof onRowClick === "function";
+
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -89,7 +93,28 @@ export function BreakdownTable({ title, rows }: BreakdownTableProps) {
             {rows.map((row) => (
               <tr
                 key={row.label}
-                className="transition-colors hover:bg-slate-50"
+                onClick={interactive ? () => onRowClick!(row) : undefined}
+                onKeyDown={
+                  interactive
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onRowClick!(row);
+                        }
+                      }
+                    : undefined
+                }
+                tabIndex={interactive ? 0 : undefined}
+                role={interactive ? "button" : undefined}
+                aria-label={
+                  interactive ? `View trend for ${row.label}` : undefined
+                }
+                className={[
+                  "transition-colors hover:bg-slate-50",
+                  interactive
+                    ? "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400"
+                    : "",
+                ].join(" ")}
               >
                 <td className="px-6 py-3 font-medium text-slate-900">
                   {row.label}

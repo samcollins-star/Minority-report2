@@ -27,6 +27,20 @@ USING (
           >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
     )
   FROM active_uk5k
+  UNION ALL
+  SELECT CURRENT_DATE(),
+         'companies_by_product'                  AS metric_key,
+         COALESCE(beauhurst_product, 'Unknown')  AS dimension,
+         COUNT(*)                                 AS count
+  FROM active_uk5k
+  GROUP BY dimension
+  UNION ALL
+  SELECT CURRENT_DATE(),
+         'companies_by_industry'                        AS metric_key,
+         COALESCE(new_beauhurst_industries, 'Unknown')  AS dimension,
+         COUNT(*)                                        AS count
+  FROM active_uk5k
+  GROUP BY dimension
 ) S
 ON  T.snapshot_date = S.snapshot_date
 AND T.metric_key    = S.metric_key

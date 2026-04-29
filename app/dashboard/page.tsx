@@ -8,7 +8,7 @@ import {
   getKpiTrend,
 } from "@/lib/bigquery";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { BreakdownTable } from "@/components/dashboard/breakdown-table";
+import { BreakdownsWithTrends } from "@/components/dashboard/breakdowns-with-trends";
 
 /**
  * Dashboard page — the main landing page after sign-in.
@@ -91,8 +91,10 @@ export default async function DashboardPage() {
         <h2 id="breakdowns-heading" className="sr-only">
           Breakdowns
         </h2>
-        <BreakdownTable title="By Product Group" rows={productGroupRows} />
-        <BreakdownTable title="By Industry" rows={industryRows} />
+        <BreakdownsWithTrends
+          productGroupRows={productGroupRows}
+          industryRows={industryRows}
+        />
       </section>
     </div>
   );
