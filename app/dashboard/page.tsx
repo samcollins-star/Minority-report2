@@ -9,8 +9,11 @@ import {
   getKpiTrendsBatch,
 } from "@/lib/bigquery";
 import type { KpiTrendPoint } from "@/lib/bigquery";
+import type { BreakdownRow } from "@/types";
+import { TARGET_INDUSTRIES } from "@/lib/target-industries";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { BreakdownsWithTrends } from "@/components/dashboard/breakdowns-with-trends";
+import { TargetIndustriesSection } from "@/components/dashboard/target-industries-section";
 
 /**
  * Dashboard page — the main landing page after sign-in.
@@ -43,6 +46,10 @@ export default async function DashboardPage() {
     productCustomers,
     productTarget,
     productSpokenTo,
+    targetIndustryCompanies,
+    targetIndustryCustomers,
+    targetIndustryTarget,
+    targetIndustrySpokenTo,
   ] = await Promise.all([
     getDashboardKPIs(),
     getBreakdownByProductGroup(),
@@ -55,22 +62,39 @@ export default async function DashboardPage() {
     getKpiTrendsBatch("customers_by_product", PRODUCTS),
     getKpiTrendsBatch("target_by_product", PRODUCTS),
     getKpiTrendsBatch("spoken_to_12m_by_product", PRODUCTS),
+    getKpiTrendsBatch("companies_by_industry", TARGET_INDUSTRIES.slice()),
+    getKpiTrendsBatch("customers_by_industry", TARGET_INDUSTRIES.slice()),
+    getKpiTrendsBatch("target_by_industry", TARGET_INDUSTRIES.slice()),
+    getKpiTrendsBatch("spoken_to_12m_by_industry", TARGET_INDUSTRIES.slice()),
   ]);
+
+  // Filter the full industry breakdown to the curated target list, preserving
+  // the order defined in TARGET_INDUSTRIES. Missing labels (defensive) are dropped.
+  const targetIndustryRows = TARGET_INDUSTRIES
+    .map((label) => industryRows.find((r) => r.label === label))
+    .filter((r): r is BreakdownRow => r != null);
 
   // unstable_cache returns plain objects across the server/client boundary;
   // convert each Map to a plain Record before passing to a client component.
   const toRecord = (
+    keys: readonly string[],
     map: Map<string, KpiTrendPoint[]>
   ): Record<string, KpiTrendPoint[]> => {
     const out: Record<string, KpiTrendPoint[]> = {};
-    for (const p of PRODUCTS) out[p] = map.get(p) ?? [];
+    for (const k of keys) out[k] = map.get(k) ?? [];
     return out;
   };
   const productTrends = {
-    companies: toRecord(productCompanies),
-    customers: toRecord(productCustomers),
-    target: toRecord(productTarget),
-    spokenTo: toRecord(productSpokenTo),
+    companies: toRecord(PRODUCTS, productCompanies),
+    customers: toRecord(PRODUCTS, productCustomers),
+    target: toRecord(PRODUCTS, productTarget),
+    spokenTo: toRecord(PRODUCTS, productSpokenTo),
+  };
+  const targetIndustryTrends = {
+    companies: toRecord(TARGET_INDUSTRIES, targetIndustryCompanies),
+    customers: toRecord(TARGET_INDUSTRIES, targetIndustryCustomers),
+    target: toRecord(TARGET_INDUSTRIES, targetIndustryTarget),
+    spokenTo: toRecord(TARGET_INDUSTRIES, targetIndustrySpokenTo),
   };
 
   return (
@@ -127,7 +151,12 @@ export default async function DashboardPage() {
           productGroupRows={productGroupRows}
           industryRows={industryRows}
           productTrends={productTrends}
-        />
+        >
+          <TargetIndustriesSection
+            rows={targetIndustryRows}
+            trends={targetIndustryTrends}
+          />
+        </BreakdownsWithTrends>
       </section>
     </div>
   );

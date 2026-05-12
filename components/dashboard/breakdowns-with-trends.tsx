@@ -28,6 +28,8 @@ interface BreakdownsWithTrendsProps {
     target: Record<string, KpiTrendPoint[]>;
     spokenTo: Record<string, KpiTrendPoint[]>;
   };
+  /** Rendered between the product trends chart and the By Industry table. */
+  children?: React.ReactNode;
 }
 
 interface OpenTrend {
@@ -145,6 +147,7 @@ export function BreakdownsWithTrends({
   productGroupRows,
   industryRows,
   productTrends,
+  children,
 }: BreakdownsWithTrendsProps) {
   // ---- single-row click-through ---------------------------------------
   // The modal owns fetching for breakdown rows now; this state just records
@@ -391,6 +394,8 @@ export function BreakdownsWithTrends({
           formatter={productMetricOption.formatter}
         />
       </div>
+
+      {children}
 
       <BreakdownTable
         title="By Industry"
