@@ -11,7 +11,7 @@
   "dependencies": {
     "@auth/core": "^0.34.2",
     "@google-cloud/bigquery": "^7.9.1",
-    "next": "14.2.16",
+    "next": "~14.2",
     "next-auth": "^4.24.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
