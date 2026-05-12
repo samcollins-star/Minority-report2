@@ -13,6 +13,7 @@ import {
   MultiLineTrendChart,
   type MultiLineSeries,
 } from "./multi-line-trend-chart";
+import { derivePenetration } from "@/lib/trends";
 
 interface BreakdownsWithTrendsProps {
   productGroupRows: BreakdownRow[];
@@ -102,35 +103,6 @@ const PRODUCT_SUBTITLE: Record<MetricKey, (weeks: string) => string> = {
   spoken_to_12m: (w) => `Companies spoken to in last 12 months, ${w}`,
 };
 
-/**
- * Derive a per-product penetration series by zipping companies + customers
- * by snapshot_date. Drops rows where companies is 0/missing on either side.
- */
-function derivePenetrationByProduct(
-  companies: Record<string, KpiTrendPoint[]>,
-  customers: Record<string, KpiTrendPoint[]>
-): Record<string, KpiTrendPoint[]> {
-  const out: Record<string, KpiTrendPoint[]> = {};
-  for (const product of PRODUCT_ORDER) {
-    const cArr = companies[product] ?? [];
-    const custByDate = new Map(
-      (customers[product] ?? []).map((p) => [p.snapshotDate, p.count])
-    );
-    const points: KpiTrendPoint[] = [];
-    for (const c of cArr) {
-      if (!c.count) continue;
-      const cust = custByDate.get(c.snapshotDate);
-      if (cust == null) continue;
-      points.push({
-        snapshotDate: c.snapshotDate,
-        count: (cust / c.count) * 100,
-      });
-    }
-    out[product] = points;
-  }
-  return out;
-}
-
 function rowToCurrentValueByMetric(
   row: BreakdownRow
 ): Partial<Record<MetricKey, number>> {
@@ -196,7 +168,7 @@ export function BreakdownsWithTrends({
             ? productTrends.target
             : productMetric === "spoken_to_12m"
               ? productTrends.spokenTo
-              : derivePenetrationByProduct(
+              : derivePenetration(
                   productTrends.companies,
                   productTrends.customers
                 );
@@ -227,10 +199,7 @@ export function BreakdownsWithTrends({
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [compareData, setCompareData] = useState<Record<
-    string,
-    KpiTrendPoint[]
-  > | null>(null);
+  const [compareData, setCompareData] = useState<CompareData | null>(null);
   // Snapshot of the selection at the moment Compare was clicked, so colour
   // assignment in the modal isn't affected by toggles made while the modal
   // is open.
@@ -248,18 +217,24 @@ export function BreakdownsWithTrends({
     setCompareError(null);
     setCompareData(null);
 
-    const params = new URLSearchParams({
-      metric: "companies_by_industry",
-      dimensions: labels.join(","),
-    });
-    fetch(`/api/trends?${params.toString()}`)
-      .then((res) => {
+    const dims = labels.join(",");
+    const fetchBatch = (metric: string) =>
+      fetch(
+        `/api/trends?${new URLSearchParams({ metric, dimensions: dims }).toString()}`
+      ).then((res) => {
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         return res.json() as Promise<Record<string, KpiTrendPoint[]>>;
-      })
-      .then((data) => {
+      });
+
+    Promise.all([
+      fetchBatch("companies_by_industry"),
+      fetchBatch("customers_by_industry"),
+      fetchBatch("target_by_industry"),
+      fetchBatch("spoken_to_12m_by_industry"),
+    ])
+      .then(([companies, customers, target, spokenTo]) => {
         if (reqId !== compareReqRef.current) return;
-        setCompareData(data);
+        setCompareData({ companies, customers, target, spokenTo });
       })
       .catch((err) => {
         if (reqId !== compareReqRef.current) return;
@@ -291,15 +266,6 @@ export function BreakdownsWithTrends({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [compareOpen]);
-
-  const compareSeries = useMemo<MultiLineSeries[]>(() => {
-    if (!compareData) return [];
-    return compareLabels.map((label, i) => ({
-      label,
-      hex: INDUSTRY_COMPARE_PALETTE[i % INDUSTRY_COMPARE_PALETTE.length],
-      data: compareData[label] ?? [],
-    }));
-  }, [compareData, compareLabels]);
 
   // ---- industry table toolbar ------------------------------------------
   const industryToolbar =
@@ -428,16 +394,10 @@ export function BreakdownsWithTrends({
         <CompareDialog
           labels={compareLabels}
           state={
-            compareLoading
-              ? "loading"
-              : compareError
-                ? "error"
-                : compareSeries.every((s) => s.data.length === 0)
-                  ? "empty"
-                  : "ready"
+            compareLoading ? "loading" : compareError ? "error" : "ready"
           }
           message={compareError ?? undefined}
-          series={compareSeries}
+          data={compareData}
           onClose={closeCompare}
         />
       )}
@@ -450,21 +410,82 @@ function parseISO(iso: string): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+interface CompareData {
+  companies: Record<string, KpiTrendPoint[]>;
+  customers: Record<string, KpiTrendPoint[]>;
+  target: Record<string, KpiTrendPoint[]>;
+  spokenTo: Record<string, KpiTrendPoint[]>;
+}
+
 interface CompareDialogProps {
   labels: string[];
-  state: "loading" | "error" | "empty" | "ready";
+  state: "loading" | "error" | "ready";
   message?: string;
-  series: MultiLineSeries[];
+  data: CompareData | null;
   onClose: () => void;
 }
+
+const COMPARE_SUBTITLE: Record<MetricKey, (n: number, w: string) => string> = {
+  companies: (n, w) => `Company counts across ${n} industries ${w}`,
+  customers: (n, w) => `Customer counts across ${n} industries ${w}`,
+  penetration: (n, w) => `Customer penetration across ${n} industries ${w}`,
+  target: (n, w) => `Target accounts across ${n} industries ${w}`,
+  spoken_to_12m: (n, w) =>
+    `Companies spoken to (last 12 months) across ${n} industries ${w}`,
+};
 
 function CompareDialog({
   labels,
   state,
   message,
-  series,
+  data,
   onClose,
 }: CompareDialogProps) {
+  const [activeMetric, setActiveMetric] = useState<MetricKey>("companies");
+  const activeTab =
+    BREAKDOWN_METRIC_TABS.find((t) => t.key === activeMetric) ??
+    BREAKDOWN_METRIC_TABS[0];
+
+  const series = useMemo<MultiLineSeries[]>(() => {
+    if (!data) return [];
+    const map: Record<string, KpiTrendPoint[]> =
+      activeMetric === "companies"
+        ? data.companies
+        : activeMetric === "customers"
+          ? data.customers
+          : activeMetric === "target"
+            ? data.target
+            : activeMetric === "spoken_to_12m"
+              ? data.spokenTo
+              : derivePenetration(data.companies, data.customers);
+    return labels.map((label, i) => ({
+      label,
+      hex: INDUSTRY_COMPARE_PALETTE[i % INDUSTRY_COMPARE_PALETTE.length],
+      data: map[label] ?? [],
+    }));
+  }, [data, activeMetric, labels]);
+
+  const spanWeeks = useMemo(() => {
+    const dates = series
+      .flatMap((s) => s.data.map((p) => p.snapshotDate))
+      .sort();
+    if (dates.length < 2) return null;
+    const first = parseISO(dates[0]);
+    const last = parseISO(dates[dates.length - 1]);
+    const days = (last.getTime() - first.getTime()) / 86_400_000;
+    return Math.max(1, Math.round(days / 7));
+  }, [series]);
+
+  const subtitle = COMPARE_SUBTITLE[activeMetric](
+    labels.length,
+    spanWeeks
+      ? `over the last ${spanWeeks} week${spanWeeks === 1 ? "" : "s"}`
+      : "over time"
+  );
+
+  const allEmpty =
+    state === "ready" && series.every((s) => s.data.length === 0);
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/40 z-40 flex items-center justify-center p-4"
@@ -500,7 +521,35 @@ function CompareDialog({
           <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
             {labels.length} industries
           </p>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </header>
+
+        <div
+          role="tablist"
+          aria-label="Industry comparison metric"
+          className="mb-4 flex flex-wrap gap-1 border-b border-slate-200"
+        >
+          {BREAKDOWN_METRIC_TABS.map((t) => {
+            const selected = t.key === activeMetric;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveMetric(t.key)}
+                className={[
+                  "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                  selected
+                    ? "border-slate-900 text-slate-900"
+                    : "border-transparent text-slate-500 hover:text-slate-700",
+                ].join(" ")}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
 
         {state === "loading" && (
           <p className="text-sm text-slate-500">Loading comparison…</p>
@@ -510,12 +559,14 @@ function CompareDialog({
             Couldn&apos;t load comparison{message ? `: ${message}` : ""}
           </p>
         )}
-        {state === "empty" && (
+        {state === "ready" && allEmpty && (
           <p className="text-sm text-slate-500">
             No snapshot history yet for any of the selected industries.
           </p>
         )}
-        {state === "ready" && <MultiLineTrendChart series={series} />}
+        {state === "ready" && !allEmpty && (
+          <MultiLineTrendChart series={series} formatter={activeTab.formatter} />
+        )}
       </div>
     </div>
   );

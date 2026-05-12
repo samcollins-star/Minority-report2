@@ -18,6 +18,7 @@ import {
   MultiLineTrendChart,
   type MultiLineSeries,
 } from "./multi-line-trend-chart";
+import { derivePenetration } from "@/lib/trends";
 
 interface TargetIndustriesSectionProps {
   rows: BreakdownRow[];
@@ -59,31 +60,6 @@ function colourFor(label: string): string {
 function parseISO(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
-}
-
-function derivePenetration(
-  companies: Record<string, KpiTrendPoint[]>,
-  customers: Record<string, KpiTrendPoint[]>
-): Record<string, KpiTrendPoint[]> {
-  const out: Record<string, KpiTrendPoint[]> = {};
-  for (const industry of TARGET_INDUSTRIES) {
-    const cArr = companies[industry] ?? [];
-    const custByDate = new Map(
-      (customers[industry] ?? []).map((p) => [p.snapshotDate, p.count])
-    );
-    const points: KpiTrendPoint[] = [];
-    for (const c of cArr) {
-      if (!c.count) continue;
-      const cust = custByDate.get(c.snapshotDate);
-      if (cust == null) continue;
-      points.push({
-        snapshotDate: c.snapshotDate,
-        count: (cust / c.count) * 100,
-      });
-    }
-    out[industry] = points;
-  }
-  return out;
 }
 
 interface OpenTrend {
