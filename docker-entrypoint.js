@@ -5,12 +5,9 @@ const { spawn } = require('node:child_process')
 const env = { ...process.env }
 
 ;(async() => {
-  // If running the web server then prerender pages
-  if (process.argv.slice(-3).join(' ') === 'npm run start') {
-    await exec('npx next build --experimental-build-mode generate')
-  }
-
-  // launch application
+  // Build is already complete from the Dockerfile (standard `next build`).
+  // Skip the experimental "generate" phase that fly's template runs by default —
+  // it tries to prerender pages by fetching from BigQuery/HubSpot and times out.
   await exec(process.argv.slice(2).join(' '))
 })()
 

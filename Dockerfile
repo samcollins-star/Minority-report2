@@ -27,8 +27,10 @@ RUN npm ci --include=dev
 # Copy application code
 COPY . .
 
-# Build application
-RUN npx next build --experimental-build-mode compile
+# Build application (standard build — do not use experimental two-stage mode,
+# which defers prerender to container startup and times out for our
+# data-heavy server components)
+RUN npx next build
 
 # Remove development dependencies
 RUN npm prune --omit=dev
