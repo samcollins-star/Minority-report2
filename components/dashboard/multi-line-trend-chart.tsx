@@ -116,10 +116,17 @@ export function MultiLineTrendChart({
           />
           <YAxis
             tick={{ fill: "#64748b", fontSize: 12 }}
-            domain={["auto", "auto"]}
+            // For percent metrics, anchor the axis at 0 so tiny variations
+            // don't get visually exaggerated by tight auto-scaling.
+            // Pad the top by 1 percentage point above the max for breathing room.
+            domain={
+              formatter === "percent"
+                ? [0, (dataMax: number) => Math.max(1, Math.ceil(dataMax + 1))]
+                : ["auto", "auto"]
+            }
             tickFormatter={(v: number) =>
               formatter === "percent"
-                ? `${v.toFixed(0)}%`
+                ? `${v.toFixed(1)}%`
                 : v.toLocaleString()
             }
           />
