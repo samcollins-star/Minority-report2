@@ -116,9 +116,11 @@ export function MultiLineTrendChart({
           />
           <YAxis
             tick={{ fill: "#64748b", fontSize: 12 }}
+            // Count metrics (companies, customers, etc.) are whole numbers —
+            // never show fractional ticks like 72.25.
+            allowDecimals={formatter === "percent"}
             // For percent metrics, anchor the axis at 0 so tiny variations
             // don't get visually exaggerated by tight auto-scaling.
-            // Pad the top by 1 percentage point above the max for breathing room.
             domain={
               formatter === "percent"
                 ? [0, (dataMax: number) => Math.max(1, Math.ceil(dataMax + 1))]
