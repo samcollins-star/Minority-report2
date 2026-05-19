@@ -166,19 +166,48 @@ export function MultiLineTrendChart({
 
       {showLegend && (
         <ul className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-          {renderable.map((s) => (
-            <li
-              key={s.label}
-              className="inline-flex items-center gap-2 text-sm text-slate-600"
-            >
-              <span
-                aria-hidden="true"
-                className="inline-block h-2 w-2 rounded-full"
-                style={{ backgroundColor: s.hex }}
-              />
-              <span>{s.label}</span>
-            </li>
-          ))}
+          {renderable.map((s) => {
+            const first = s.data[0]?.count;
+            const last = s.data[s.data.length - 1]?.count;
+            const change =
+              typeof first === "number" && typeof last === "number"
+                ? last - first
+                : null;
+            return (
+              <li
+                key={s.label}
+                className="inline-flex items-center gap-2 text-sm text-slate-600"
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: s.hex }}
+                />
+                <span>{s.label}</span>
+                {typeof last === "number" && (
+                  <span className="font-medium text-slate-900">
+                    {formatter === "percent"
+                      ? `${last.toFixed(1)}%`
+                      : last.toLocaleString()}
+                  </span>
+                )}
+                {change != null && change !== 0 && (
+                  <span
+                    className={
+                      change > 0
+                        ? "text-emerald-600 text-xs"
+                        : "text-rose-600 text-xs"
+                    }
+                  >
+                    {change > 0 ? "+" : ""}
+                    {formatter === "percent"
+                      ? `${change.toFixed(1)}%`
+                      : change.toLocaleString()}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
