@@ -873,3 +873,174 @@ export const getOwnerNameById = unstable_cache(
   ["owner-by-id"],
   { revalidate: CACHE_TTL, tags: ["owners"] }
 );
+
+// ---------------------------------------------------------------------------
+// Events feed
+// ---------------------------------------------------------------------------
+
+export type DashboardEventKind =
+  | "joined"
+  | "renewed"
+  | "churned"
+  | "stale_12m";
+
+export interface DashboardEvent {
+  /** Synthetic key, stable per (kind, company, date) — used as React key */
+  id: string;
+  kind: DashboardEventKind;
+  companyId: string;
+  companyName: string;
+  industry: string | null;
+  productGroup: string | null;
+  /** ISO date (YYYY-MM-DD) of when the transition was observed */
+  occurredAt: string;
+  /** Whether the company is currently a customer (planhat-aligned) */
+  isCustomer: boolean;
+}
+
+interface DashboardEventRow {
+  id: string;
+  kind: DashboardEventKind;
+  company_id: string;
+  company_name: string | null;
+  industry: string | null;
+  product_group: string | null;
+  occurred_at: string;
+  is_customer: boolean;
+}
+
+/**
+ * Recent state-transition events across the UK5K universe.
+ *
+ * Four event types are detected from existing timestamp fields:
+ *   - joined:    became a customer in the window (no prior churn, or prior
+ *                churn ≥120 days before the join — i.e. fresh acquisition)
+ *   - renewed:   became a customer in the window AND a prior churn happened
+ *                within the last 120 days (recovered subscription)
+ *   - churned:   left as a customer in the window
+ *   - stale_12m: crossed the 12-month-without-contact threshold in the window
+ *
+ * Each event combines a "when did this transition happen" timestamp filter
+ * with a current-state check so we don't emit "joined" for a company that's
+ * since churned again.
+ */
+export const getRecentDashboardEvents = unstable_cache(
+  async (daysBack: number = 7): Promise<DashboardEvent[]> => {
+    const safeDays = clampInt(daysBack, 1, 365);
+    const sql = `
+      WITH active_uk5k AS (
+        SELECT *
+        FROM ${COMPANIES_TABLE} AS c
+        WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
+      )
+      SELECT
+        CONCAT(
+          'joined:',
+          CAST(hs_object_id AS STRING),
+          ':',
+          CAST(DATE(date_moved_to_customer) AS STRING)
+        )                                                AS id,
+        'joined'                                         AS kind,
+        CAST(hs_object_id AS STRING)                     AS company_id,
+        name                                             AS company_name,
+        new_beauhurst_industries                         AS industry,
+        beauhurst_product                                AS product_group,
+        CAST(DATE(date_moved_to_customer) AS STRING)     AS occurred_at,
+        TRUE                                              AS is_customer
+      FROM active_uk5k
+      WHERE date_moved_to_customer IS NOT NULL
+        AND DATE(date_moved_to_customer)
+            >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeDays} DAY)
+        AND planhat_customer_status = 'customer'
+        AND (
+          date_churned IS NULL
+          OR DATE_DIFF(DATE(date_moved_to_customer), DATE(date_churned), DAY) >= 120
+        )
+
+      UNION ALL
+
+      SELECT
+        CONCAT(
+          'renewed:',
+          CAST(hs_object_id AS STRING),
+          ':',
+          CAST(DATE(date_moved_to_customer) AS STRING)
+        ),
+        'renewed',
+        CAST(hs_object_id AS STRING),
+        name,
+        new_beauhurst_industries,
+        beauhurst_product,
+        CAST(DATE(date_moved_to_customer) AS STRING),
+        TRUE
+      FROM active_uk5k
+      WHERE date_moved_to_customer IS NOT NULL
+        AND DATE(date_moved_to_customer)
+            >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeDays} DAY)
+        AND planhat_customer_status = 'customer'
+        AND date_churned IS NOT NULL
+        AND DATE_DIFF(DATE(date_moved_to_customer), DATE(date_churned), DAY)
+            BETWEEN 0 AND 119
+
+      UNION ALL
+
+      SELECT
+        CONCAT(
+          'churned:',
+          CAST(hs_object_id AS STRING),
+          ':',
+          CAST(DATE(date_churned) AS STRING)
+        ),
+        'churned',
+        CAST(hs_object_id AS STRING),
+        name,
+        new_beauhurst_industries,
+        beauhurst_product,
+        CAST(DATE(date_churned) AS STRING),
+        FALSE
+      FROM active_uk5k
+      WHERE date_churned IS NOT NULL
+        AND DATE(date_churned)
+            >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeDays} DAY)
+        AND (planhat_customer_status IS NULL OR planhat_customer_status != 'customer')
+
+      UNION ALL
+
+      SELECT
+        CONCAT(
+          'stale_12m:',
+          CAST(hs_object_id AS STRING),
+          ':',
+          CAST(DATE_ADD(DATE(hs_last_sales_activity_timestamp), INTERVAL 365 DAY) AS STRING)
+        ),
+        'stale_12m',
+        CAST(hs_object_id AS STRING),
+        name,
+        new_beauhurst_industries,
+        beauhurst_product,
+        CAST(DATE_ADD(DATE(hs_last_sales_activity_timestamp), INTERVAL 365 DAY) AS STRING),
+        (planhat_customer_status = 'customer')
+      FROM active_uk5k
+      WHERE hs_last_sales_activity_timestamp IS NOT NULL
+        AND TIMESTAMP(hs_last_sales_activity_timestamp) BETWEEN
+              TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL (365 + ${safeDays}) DAY)
+              AND TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+
+      ORDER BY occurred_at DESC
+    `;
+
+    const rows = await runQuery<DashboardEventRow>(sql);
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      companyId: r.company_id,
+      companyName: r.company_name ?? "—",
+      industry: r.industry,
+      productGroup: r.product_group,
+      occurredAt: r.occurred_at,
+      isCustomer: Boolean(r.is_customer),
+    }));
+  },
+  ["events-feed"],
+  { revalidate: CACHE_TTL, tags: ["events-feed"] }
+);

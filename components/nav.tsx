@@ -13,6 +13,7 @@ export function Nav() {
 
   const links = [
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/events", label: "Events" },
     { href: "/companies", label: "Companies" },
   ];
 

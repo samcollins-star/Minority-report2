@@ -56,7 +56,7 @@ function formatDate(ts: string | null): string {
   }
 }
 
-const SELECT_CLS =
+export const SELECT_CLS =
   "rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm " +
   "text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none " +
   "focus:ring-1 focus:ring-indigo-500";
