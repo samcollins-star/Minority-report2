@@ -25,14 +25,15 @@ const SNAPSHOT_DAYS = 365;
 const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
  * Company detail page — shows overview, contacts, deals and an activities placeholder.
  * The `id` segment is the company's hs_object_id (numeric string).
  */
-export default async function CompanyDetailPage({ params }: PageProps) {
+export default async function CompanyDetailPage(props: PageProps) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect("/auth/signin");

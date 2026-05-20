@@ -301,42 +301,42 @@ function mapCompanyRow(row: CompanyRow): Company {
   };
 }
 
-export const getAllCompanies = unstable_cache(
-  async (): Promise<Company[]> => {
-    const sql = `
-      SELECT
-        CAST(c.hs_object_id AS STRING)        AS hs_object_id,
-        c.name,
-        c.uk10k,
-        c.planhat_customer_status,
-        c.hs_is_target_account,
-        c.hs_last_sales_activity_timestamp,
-        c.beauhurst_product,
-        c.new_beauhurst_industries,
-        c.uk_headcount_uk5k,
-        c.global_headcount_uk5k,
-        c.website,
-        c.linkedin_company_page,
-        c.beauhurst_data_beauhurst_url,
-        CAST(o.id AS STRING)                  AS owner_id,
-        NULLIF(
-          TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
-          ''
-        )                                     AS owner_name_raw,
-        o.email                               AS owner_email
-      FROM ${COMPANIES_TABLE} AS c
-      LEFT JOIN ${OWNERS_TABLE} o
-        ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
-      WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
-      ORDER BY c.name ASC
-    `;
+// Not wrapped in unstable_cache: the full UK5K list is ~2.5MB serialised,
+// over Next 16's 2MB per-entry cache write limit. Re-querying BigQuery on
+// each /companies load is acceptable for now; revisit if it shows up in
+// latency.
+export async function getAllCompanies(): Promise<Company[]> {
+  const sql = `
+    SELECT
+      CAST(c.hs_object_id AS STRING)        AS hs_object_id,
+      c.name,
+      c.uk10k,
+      c.planhat_customer_status,
+      c.hs_is_target_account,
+      c.hs_last_sales_activity_timestamp,
+      c.beauhurst_product,
+      c.new_beauhurst_industries,
+      c.uk_headcount_uk5k,
+      c.global_headcount_uk5k,
+      c.website,
+      c.linkedin_company_page,
+      c.beauhurst_data_beauhurst_url,
+      CAST(o.id AS STRING)                  AS owner_id,
+      NULLIF(
+        TRIM(CONCAT(COALESCE(o.first_name, ''), ' ', COALESCE(o.last_name, ''))),
+        ''
+      )                                     AS owner_name_raw,
+      o.email                               AS owner_email
+    FROM ${COMPANIES_TABLE} AS c
+    LEFT JOIN ${OWNERS_TABLE} o
+      ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
+    WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
+    ORDER BY c.name ASC
+  `;
 
-    const rows = await runQuery<CompanyRow>(sql);
-    return rows.map(mapCompanyRow);
-  },
-  ["all-companies"],
-  { revalidate: CACHE_TTL }
-);
+  const rows = await runQuery<CompanyRow>(sql);
+  return rows.map(mapCompanyRow);
+}
 
 // ---------------------------------------------------------------------------
 // Company detail

@@ -20,10 +20,8 @@ function clampInt(raw: string | null, fallback: number, min: number, max: number
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -14,11 +14,12 @@ function parseDays(raw: string | string[] | undefined): AllowedDays {
     : 7;
 }
 
-export default async function EventsPage({
-  searchParams,
-}: {
-  searchParams: { days?: string | string[] };
-}) {
+export default async function EventsPage(
+  props: {
+    searchParams: Promise<{ days?: string | string[] }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect("/auth/signin");
