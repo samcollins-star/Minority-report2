@@ -12,6 +12,7 @@ import {
 import {
   getLiveActivitiesByCompanyId,
   getLiveContactsByCompanyId,
+  getLiveLastTouchByCompanyId,
 } from "@/lib/hubspot";
 import type { Activity, Company, Contact } from "@/types";
 import { CompanyOverview } from "@/components/company/overview";
@@ -26,6 +27,26 @@ const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "329016";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+/**
+ * Combine HubSpot's sales-activity timestamp with Planhat's curated last-touch
+ * for customers. Mirrors the SQL in `lib/bigquery.ts`. For non-customers, the
+ * HubSpot timestamp passes through unchanged.
+ */
+function computeEffectiveLastContacted(
+  company: Company,
+  planhatLastTouch: string | null,
+): string | null {
+  const hubspot = company.hs_last_sales_activity_timestamp;
+  if (company.planhat_customer_status !== "customer") {
+    return hubspot;
+  }
+  const dates = [hubspot, planhatLastTouch].filter(
+    (d): d is string => typeof d === "string" && d.length > 0,
+  );
+  if (dates.length === 0) return null;
+  return dates.reduce((max, cur) => (cur > max ? cur : max));
 }
 
 /**
@@ -57,6 +78,7 @@ export default async function CompanyDetailPage(props: PageProps) {
     activity,
     summary,
     snapshotActivity,
+    planhatLastTouch,
   ] = await Promise.all([
     getCompanyById(rawId),
     getLiveContactsByCompanyId(rawId).catch((err: unknown) => {
@@ -75,6 +97,10 @@ export default async function CompanyDetailPage(props: PageProps) {
     getLiveActivitiesByCompanyId(rawId, SNAPSHOT_DAYS, 1).catch((err: unknown) => {
       console.error("[snapshot-activity] HubSpot fetch failed:", err);
       return [] as Activity[];
+    }),
+    getLiveLastTouchByCompanyId(rawId).catch((err: unknown) => {
+      console.error("[last-touch] HubSpot fetch failed — will fall back to HubSpot timestamp:", err);
+      return null;
     }),
   ]);
 
@@ -234,7 +260,10 @@ export default async function CompanyDetailPage(props: PageProps) {
       {/* Four sections stacked vertically */}
       <div className="mt-6 space-y-6">
         {/* 1. Overview */}
-        <CompanyOverview company={company} />
+        <CompanyOverview
+          company={company}
+          lastContact={computeEffectiveLastContacted(company, planhatLastTouch)}
+        />
 
         {/* 2. Contacts */}
         <ContactsTable contacts={contacts} fallback={contactsFromFallback} />

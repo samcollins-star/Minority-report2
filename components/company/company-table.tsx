@@ -83,7 +83,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   industry: "Industry",
   customer: "Customer?",
   target: "Target account?",
-  lastActivity: "Last activity",
+  lastActivity: "Last contact",
 };
 
 /**
@@ -154,11 +154,21 @@ const comparators: Record<
     ),
   lastActivity: (a, b, dir) =>
     compareTimestamp(
-      a.hs_last_sales_activity_timestamp,
-      b.hs_last_sales_activity_timestamp,
+      effectiveLastContact(a),
+      effectiveLastContact(b),
       dir,
     ),
 };
+
+/**
+ * Source-of-truth for the "Last contact" column. Prefers the Planhat-aware
+ * `effective_last_contacted` returned by the BigQuery list query, falling
+ * back to the raw HubSpot sales-activity timestamp if it isn't projected
+ * (e.g. on older cached payloads).
+ */
+function effectiveLastContact(c: Company): string | null {
+  return c.effective_last_contacted ?? c.hs_last_sales_activity_timestamp;
+}
 
 /** Arrow icon shown next to active column header. */
 function SortArrow({ direction }: { direction: SortDirection }) {
@@ -323,7 +333,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
 
       // Contacted in last 12 months
       if (contactedFilter !== "") {
-        const ts = c.hs_last_sales_activity_timestamp;
+        const ts = effectiveLastContact(c);
         const wasContacted =
           ts != null && now - new Date(ts).getTime() <= oneYear;
         if (contactedFilter === "yes" && !wasContacted) return false;
@@ -591,7 +601,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
               />
               <SortableHeader
                 column="lastActivity"
-                label="Last activity"
+                label="Last contact"
                 sortStack={sortStack}
                 onToggle={toggleSort}
                 className="px-6 py-3"
@@ -645,7 +655,7 @@ export function CompanyTable({ companies }: CompanyTableProps) {
                     />
                   </td>
                   <td className="px-6 py-3 text-slate-500">
-                    {formatDate(company.hs_last_sales_activity_timestamp)}
+                    {formatDate(effectiveLastContact(company))}
                   </td>
                 </tr>
               ))

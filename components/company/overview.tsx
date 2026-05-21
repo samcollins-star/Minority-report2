@@ -6,6 +6,12 @@ import type { Company } from "@/types";
 
 interface CompanyOverviewProps {
   company: Company;
+  /**
+   * Effective "last contact" date — for customers, the max of HubSpot's
+   * hs_last_sales_activity_timestamp and Planhat's planhat_last_touch
+   * (composed server-side from a live HubSpot API read).
+   */
+  lastContact: string | null;
 }
 
 /** Pill badge — used for boolean attributes */
@@ -61,7 +67,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function CompanyOverview({ company }: CompanyOverviewProps) {
+export function CompanyOverview({ company, lastContact }: CompanyOverviewProps) {
   const isCustomer = company.planhat_customer_status === "customer";
 
   return (
@@ -114,9 +120,7 @@ export function CompanyOverview({ company }: CompanyOverviewProps) {
           </Field>
         </div>
         <div className="py-3">
-          <Field label="Last sales activity">
-            {formatDate(company.hs_last_sales_activity_timestamp)}
-          </Field>
+          <Field label="Last contact">{formatDate(lastContact)}</Field>
         </div>
         <div className="py-3">
           <Field label="Company owner">

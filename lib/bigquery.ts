@@ -61,6 +61,8 @@ const DEALS_PIPELINE_STAGES_TABLE = `\`${DATASET}.deals_pipeline_stages\``;
 const OWNERS_TABLE = `\`${DATASET}.owners\``;
 const ENGAGEMENT_CALLS_TABLE = `\`${DATASET}.engagement_calls_v3\``;
 const ENGAGEMENT_MEETINGS_TABLE = `\`${DATASET}.engagement_meetings_v3\``;
+const PLANHAT_COMPANY_TABLE = `\`${DATASET}.planhat_company\``;
+const PLANHAT_COMPANY_INFO_TABLE = `\`${DATASET}.planhat_company_info\``;
 
 const SNAPSHOTS_TABLE =
   "`engine-room-analytics.minority_report.dashboard_snapshots`";
@@ -73,6 +75,60 @@ const SNAPSHOTS_TABLE =
 const ACTIVE_UK5K_COMPANY_FILTER = `
   CAST(c.uk10k AS BOOL) = TRUE
   AND (c.archived IS NULL OR c.archived = FALSE)
+`;
+
+/**
+ * Reusable CTE body. Picks the most recent `last_touch_date` per HubSpot
+ * company by walking `planhat_company` (the join table holding the
+ * hubspot_company_id) into `planhat_company_info` (where last_touch_date
+ * lives, with one row per Planhat sync). Drop into the WITH clause of any
+ * query that needs to combine HubSpot's sales-activity timestamp with the
+ * curated Planhat touch date.
+ *
+ * TODO: collapse to a direct read on companies.planhat_last_touch once Hevo
+ * starts syncing that HubSpot custom property into the companies table.
+ */
+const LATEST_PLANHAT_TOUCH_CTE = `
+  latest_planhat_touch AS (
+    SELECT
+      pc.hubspot_company_id,
+      ARRAY_AGG(pci.last_touch_date IGNORE NULLS ORDER BY pci.timestamp DESC LIMIT 1)[SAFE_OFFSET(0)] AS last_touch_date
+    FROM ${PLANHAT_COMPANY_TABLE} pc
+    JOIN ${PLANHAT_COMPANY_INFO_TABLE} pci
+      ON CAST(pc.external_id AS STRING) = pci.external_id
+    WHERE pc.hubspot_company_id IS NOT NULL
+    GROUP BY pc.hubspot_company_id
+  )
+`;
+
+/** Join fragment — assumes a companies row aliased as `c`. */
+const LATEST_PLANHAT_TOUCH_JOIN = `
+  LEFT JOIN latest_planhat_touch lpt
+    ON CAST(c.hs_object_id AS STRING) = lpt.hubspot_company_id
+`;
+
+/**
+ * Effective "last contacted" expression. For customers, the max of HubSpot's
+ * sales activity timestamp and Planhat's last touch date; for everyone else,
+ * HubSpot's value passes through unchanged. Assumes the companies row is
+ * aliased `c` and the latest_planhat_touch row is aliased `lpt`.
+ *
+ * Returns NULL if both sources are NULL (or both fall back to the 1970 epoch
+ * sentinel after the COALESCE).
+ */
+const EFFECTIVE_LAST_CONTACTED_EXPR = `
+  CASE
+    WHEN c.planhat_customer_status = 'customer' THEN
+      NULLIF(
+        GREATEST(
+          COALESCE(TIMESTAMP(c.hs_last_sales_activity_timestamp), TIMESTAMP('1970-01-01')),
+          COALESCE(TIMESTAMP(lpt.last_touch_date),                 TIMESTAMP('1970-01-01'))
+        ),
+        TIMESTAMP('1970-01-01')
+      )
+    ELSE
+      TIMESTAMP(c.hs_last_sales_activity_timestamp)
+  END
 `;
 
 // How long to cache BigQuery results (1 hour)
@@ -108,16 +164,17 @@ async function runQuery<T>(sql: string, params?: unknown[]): Promise<T[]> {
 export const getDashboardKPIs = unstable_cache(
   async (): Promise<DashboardKPIs> => {
     const sql = `
+      WITH ${LATEST_PLANHAT_TOUCH_CTE}
       SELECT
         COUNT(*)                                                    AS totalCompanies,
-        COUNTIF(planhat_customer_status = 'customer')               AS totalCustomers,
+        COUNTIF(c.planhat_customer_status = 'customer')             AS totalCustomers,
         COUNTIF(
-          hs_last_sales_activity_timestamp IS NOT NULL
-          AND TIMESTAMP(hs_last_sales_activity_timestamp)
-              >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+          (${EFFECTIVE_LAST_CONTACTED_EXPR})
+            >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
         )                                                           AS spokenToLast12Months,
-        COUNTIF(hs_is_target_account = TRUE)                        AS targetAccounts
+        COUNTIF(c.hs_is_target_account = TRUE)                      AS targetAccounts
       FROM ${COMPANIES_TABLE} AS c
+      ${LATEST_PLANHAT_TOUCH_JOIN}
       WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
     `;
 
@@ -163,22 +220,23 @@ export const getBreakdownByProductGroup = unstable_cache(
         FROM ${DEALS_TABLE}
         WHERE amount IS NOT NULL
         GROUP BY associated_primary_company_id
-      )
+      ),
+      ${LATEST_PLANHAT_TOUCH_CTE}
       SELECT
         COALESCE(c.beauhurst_product, 'Unknown')  AS label,
         COUNT(*)                                   AS totalCompanies,
         COUNTIF(c.planhat_customer_status = 'customer')
                                                    AS customerCount,
         COUNTIF(
-          c.hs_last_sales_activity_timestamp IS NOT NULL
-          AND TIMESTAMP(c.hs_last_sales_activity_timestamp)
-              >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+          (${EFFECTIVE_LAST_CONTACTED_EXPR})
+            >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
         )                                          AS spokenToCount,
         COUNTIF(c.hs_is_target_account = TRUE)     AS targetAccountCount,
         COALESCE(SUM(cd.total_deal_value), 0)      AS totalDealValue
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
         ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
+      ${LATEST_PLANHAT_TOUCH_JOIN}
       WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
       GROUP BY label
       ORDER BY totalCompanies DESC
@@ -228,21 +286,22 @@ export const getBreakdownByIndustry = unstable_cache(
         FROM ${DEALS_TABLE}
         WHERE amount IS NOT NULL
         GROUP BY associated_primary_company_id
-      )
+      ),
+      ${LATEST_PLANHAT_TOUCH_CTE}
       SELECT
         COALESCE(c.new_beauhurst_industries, 'Unknown') AS label,
         COUNT(*)                                         AS totalCompanies,
         COUNTIF(c.planhat_customer_status = 'customer') AS customerCount,
         COUNTIF(
-          c.hs_last_sales_activity_timestamp IS NOT NULL
-          AND TIMESTAMP(c.hs_last_sales_activity_timestamp)
-              >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
+          (${EFFECTIVE_LAST_CONTACTED_EXPR})
+            >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
         )                                               AS spokenToCount,
         COUNTIF(c.hs_is_target_account = TRUE)          AS targetAccountCount,
         COALESCE(SUM(cd.total_deal_value), 0)           AS totalDealValue
       FROM ${COMPANIES_TABLE} c
       LEFT JOIN company_deals cd
         ON CAST(c.hs_object_id AS STRING) = CAST(cd.associated_primary_company_id AS STRING)
+      ${LATEST_PLANHAT_TOUCH_JOIN}
       WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
       GROUP BY label
       ORDER BY totalCompanies DESC
@@ -307,6 +366,7 @@ function mapCompanyRow(row: CompanyRow): Company {
 // latency.
 export async function getAllCompanies(): Promise<Company[]> {
   const sql = `
+    WITH ${LATEST_PLANHAT_TOUCH_CTE}
     SELECT
       CAST(c.hs_object_id AS STRING)        AS hs_object_id,
       c.name,
@@ -314,6 +374,7 @@ export async function getAllCompanies(): Promise<Company[]> {
       c.planhat_customer_status,
       c.hs_is_target_account,
       c.hs_last_sales_activity_timestamp,
+      ${EFFECTIVE_LAST_CONTACTED_EXPR}      AS effective_last_contacted,
       c.beauhurst_product,
       c.new_beauhurst_industries,
       c.uk_headcount_uk5k,
@@ -330,6 +391,7 @@ export async function getAllCompanies(): Promise<Company[]> {
     FROM ${COMPANIES_TABLE} AS c
     LEFT JOIN ${OWNERS_TABLE} o
       ON CAST(c.hubspot_owner_id AS STRING) = CAST(o.id AS STRING)
+    ${LATEST_PLANHAT_TOUCH_JOIN}
     WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
     ORDER BY c.name ASC
   `;
@@ -932,7 +994,8 @@ export const getRecentDashboardEvents = unstable_cache(
         SELECT *
         FROM ${COMPANIES_TABLE} AS c
         WHERE ${ACTIVE_UK5K_COMPANY_FILTER}
-      )
+      ),
+      ${LATEST_PLANHAT_TOUCH_CTE}
       SELECT
         CONCAT(
           'joined:',
@@ -1009,20 +1072,20 @@ export const getRecentDashboardEvents = unstable_cache(
       SELECT
         CONCAT(
           'stale_12m:',
-          CAST(hs_object_id AS STRING),
+          CAST(c.hs_object_id AS STRING),
           ':',
-          CAST(DATE_ADD(DATE(hs_last_sales_activity_timestamp), INTERVAL 365 DAY) AS STRING)
+          CAST(DATE_ADD(DATE(${EFFECTIVE_LAST_CONTACTED_EXPR}), INTERVAL 365 DAY) AS STRING)
         ),
         'stale_12m',
-        CAST(hs_object_id AS STRING),
-        name,
-        new_beauhurst_industries,
-        beauhurst_product,
-        CAST(DATE_ADD(DATE(hs_last_sales_activity_timestamp), INTERVAL 365 DAY) AS STRING),
-        (planhat_customer_status = 'customer')
-      FROM active_uk5k
-      WHERE hs_last_sales_activity_timestamp IS NOT NULL
-        AND TIMESTAMP(hs_last_sales_activity_timestamp) BETWEEN
+        CAST(c.hs_object_id AS STRING),
+        c.name,
+        c.new_beauhurst_industries,
+        c.beauhurst_product,
+        CAST(DATE_ADD(DATE(${EFFECTIVE_LAST_CONTACTED_EXPR}), INTERVAL 365 DAY) AS STRING),
+        (c.planhat_customer_status = 'customer')
+      FROM active_uk5k c
+      ${LATEST_PLANHAT_TOUCH_JOIN}
+      WHERE (${EFFECTIVE_LAST_CONTACTED_EXPR}) BETWEEN
               TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL (365 + ${safeDays}) DAY)
               AND TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 365 DAY)
 

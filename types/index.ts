@@ -27,6 +27,15 @@ export interface Company {
   /** ISO timestamp of the last recorded sales activity */
   hs_last_sales_activity_timestamp: string | null;
 
+  /**
+   * Effective "last contacted" timestamp combining HubSpot's
+   * `hs_last_sales_activity_timestamp` with Planhat's `last_touch_date` for
+   * customers. Only populated by the list-view query (`getAllCompanies`);
+   * the company detail page composes the value separately at request time
+   * via the HubSpot API.
+   */
+  effective_last_contacted?: string | null;
+
   /** Product group — one of the four Beauhurst products */
   beauhurst_product: string | null;
 

@@ -16,21 +16,24 @@ export default async function CompaniesPage() {
   }
 
   const raw = await getAllCompanies();
-  const companies: Company[] = raw.map((c) => {
-    // BigQueryTimestamp serialises as { value: "<ISO string>" } rather than a
-    // plain string, so we extract .value before the JSON round-trip.
-    const tsField = c.hs_last_sales_activity_timestamp as unknown;
-    const ts: string | null =
-      tsField == null
-        ? null
-        : typeof tsField === "object"
-        ? ((tsField as { value: string }).value ?? null)
-        : (tsField as string);
-    return {
-      ...(JSON.parse(JSON.stringify(c)) as Company),
-      hs_last_sales_activity_timestamp: ts,
-    };
-  });
+  // BigQueryTimestamp serialises as { value: "<ISO string>" } rather than a
+  // plain string, so we unwrap each timestamp field before the JSON round-trip.
+  const unwrapTimestamp = (v: unknown): string | null => {
+    if (v == null) return null;
+    if (typeof v === "object") {
+      return (v as { value?: string }).value ?? null;
+    }
+    return v as string;
+  };
+  const companies: Company[] = raw.map((c) => ({
+    ...(JSON.parse(JSON.stringify(c)) as Company),
+    hs_last_sales_activity_timestamp: unwrapTimestamp(
+      c.hs_last_sales_activity_timestamp,
+    ),
+    effective_last_contacted: unwrapTimestamp(
+      (c as Company).effective_last_contacted,
+    ),
+  }));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

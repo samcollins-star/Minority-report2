@@ -110,6 +110,56 @@ export const getLiveContactsByCompanyId = unstable_cache(
 );
 
 // ---------------------------------------------------------------------------
+// Live `planhat_last_touch` — per-company custom property fetch
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a single company's `planhat_last_touch` property via the HubSpot
+ * single-object endpoint. Returns the raw property value (typically an ISO
+ * date or YYYY-MM-DD string) or null when the property isn't set on the
+ * company. Throws on any HubSpot error; callers should `.catch(() => null)`
+ * and degrade gracefully to the BigQuery-only last-contact value.
+ */
+async function fetchLiveLastTouchByCompanyId(
+  companyId: string
+): Promise<string | null> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error("HUBSPOT_ACCESS_TOKEN is not set");
+  }
+  const safeId = encodeURIComponent(companyId);
+  const response = await fetchWithRetry(
+    `https://api.hubapi.com/crm/v3/objects/companies/${safeId}?properties=planhat_last_touch`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  // Property unset / company doesn't exist: treat as "no Planhat touch".
+  if (response.status === 404) return null;
+  if (response.status === 429) {
+    throw new Error("HubSpot rate limit exceeded (429)");
+  }
+  if (!response.ok) {
+    throw new Error(`HubSpot last-touch fetch error: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    properties?: { planhat_last_touch?: string | null };
+  };
+  return data.properties?.planhat_last_touch ?? null;
+}
+
+export const getLiveLastTouchByCompanyId = unstable_cache(
+  fetchLiveLastTouchByCompanyId,
+  ["hubspot-last-touch"],
+  { revalidate: 300, tags: ["hubspot-last-touch"] }
+);
+
+// ---------------------------------------------------------------------------
 // Live activities — calls, meetings, emails, notes, tasks
 // ---------------------------------------------------------------------------
 
